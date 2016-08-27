@@ -1,1 +1,1 @@
-a
+ad_groups.ps1 and ad_group_members.ps1 were designed to be executed as a part of fully automated solution therefore it does not show error messages directly into console, but stores errors into ./errors.txt file -> specified in variable : $errorLogPath
