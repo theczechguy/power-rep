@@ -502,35 +502,43 @@ function Write-ZLog
 
 <#
 .Synopsis
-   Short description
+   Update exception object
 .DESCRIPTION
-   Long description
+   Set's ErrorDetails exception property to desired message
 .EXAMPLE
    Example of how to use this cmdlet
-.EXAMPLE
-   Another example of how to use this cmdlet
 #>
-function Handle-Exception
+function Update-Exception
 {
     [CmdletBinding()]
-    [OutputType([void])]
+    [OutputType([System.Exception])]
     Param
     (
         # Exception object
         [Parameter(Mandatory=$true,
                    ValueFromPipelineByPropertyName=$true,
                    Position=0)]
-        [System.Exception]
-        $Exception
+        [System.Management.Automation.ErrorRecord]
+        $Exception,
+
+        # error detail message
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $ErrorDetailMessage,
+
+        # do not return exception but throw it instead
+        [Parameter(Mandatory = $false)]
+        [switch]
+        $Throw
     )
-
-    Begin {
-
-    }
     Process {
+        $Exception.errordetails = $ErrorDetailMessage
 
-    }
-    End {
-
+        if ($Throw.IsPresent) {
+            throw $Exception
+        } else {
+            Write-Output $Exception
+        }
     }
 }
