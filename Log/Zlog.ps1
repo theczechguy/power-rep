@@ -1,7 +1,7 @@
 function New-ZlogConfiguration
 {
     [CmdletBinding()]
-    [OutputType([bool])]
+    [OutputType([string])]
     Param
     (
         # Param1 help description
@@ -58,7 +58,6 @@ function New-ZlogConfiguration
         $EnableDebug
         
     )
-
     Process
     {
         Set-StrictMode -Version latest
@@ -121,7 +120,7 @@ function New-ZlogConfiguration
                     'EnableDebug' {
                         write-debug "PARAMETER ANALYSIS : EnableDebug -> True"
                         Write-Verbose -Message 'Debug level messages enabled'
-                        $global:ZEnableDebugMessages = $true
+                        $global:ZLogEnableDebugMessages = $true
                     }
 
                     DEFAULT {
@@ -235,7 +234,7 @@ function Write-ZLog
         $LogFunction = 'Start',
 
         [Parameter(Mandatory = $false)]
-        [ValidateSet('INFO','WARNING','ERROR')]
+        [ValidateSet('INFO','WARNING','ERROR','DEBUG')]
         $Level = 'INFO',
         
         [Parameter(Mandatory = $false)]
@@ -376,6 +375,12 @@ function Write-ZLog
 
             #region parameterset message
                 if ($PSCmdlet.ParameterSetName -eq 'message') {
+
+                    if ($Global:ZLogEnableDebugMessages -eq $false -and $Level -eq 'DEBUG') {
+                        Write-Verbose 'DEBUG level messages are disabled'
+                        continue
+                    }
+
                     
                     if($Message -isnot [string] -AND $Message -isnot [int]) {
                         Write-debug "Datatype of current message : $($Message.GetType())"
@@ -470,6 +475,11 @@ function Write-ZLog
 
                         'ERROR' {
                             Write-Host -Object $finalMessage -ForegroundColor Red
+                            break
+                        }
+
+                        'DEBUG' {
+                            Write-Host -Object $finalMessage -ForegroundColor Cyan
                             break
                         }
 
