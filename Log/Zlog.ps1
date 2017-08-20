@@ -266,31 +266,44 @@ function Write-ZLog
             switch ($Indent) {
                 'Increase'{
                     $localIndent = ++$Global:ZLogIndent
+                    break
                 }
                 'IncreaseDelayed'{
                     $localIndent = $Global:ZLogIndent++
+                    break
                 }
                 'Decrease'{
                     if($Global:ZLogIndent -ne 0) {
                         $localIndent = --$Global:ZLogIndent
-                    }                    
+                    } else {
+                        Write-Verbose 'Indent is already 0'
+                    }
+                    break           
                 }
                 'DecreaseDelayed'{
                     if($Global:ZLogIndent -ne 0) {
                         $localIndent = $Global:ZLogIndent--
-                    }                    
+                    } else {
+                        Write-Verbose 'Indent is already 0'
+                    }
+                    break
                 }
                 'Reset'{
                     $Global:ZLogIndent = 0
+                    $localIndent = $Global:ZLogIndent
+                    break
+                }
+
+                Default {
                     $localIndent = $Global:ZLogIndent
                 }
             }
 
             if($localIndent -gt 0) {
-                $indent = "> > " * $localIndent
+                $indentString = "> > " * $localIndent
             }
             else{
-                $indent = [string]::Empty
+                $indentString = [string]::Empty
             }
         #endregion
 
@@ -392,7 +405,7 @@ function Write-ZLog
                         #endregion
 
                         #region remove empty spaces from left side , count is determined by the previous step
-                            $finalMessage += "{0} :: {1} :: {2}" -f $currentTime, $Level , $indent # first line empty
+                            $finalMessage += "{0} :: {1} :: {2}" -f $currentTime, $Level , $indentString # first line empty
                             $lineLength = $finalMessage.Length # length of the first line, without any message
 
                             $splitMessage| ForEach-Object -process {
@@ -412,7 +425,7 @@ function Write-ZLog
                             }
                         #endregion
                     } else {
-                        $finalMessage = "{0} :: {1} :: {2}{3}" -f $currentTime, $Level , $indent , $Message
+                        $finalMessage = "{0} :: {1} :: {2}{3}" -f $currentTime, $Level , $indentString , $Message
                     }
                 }
             #endregion
@@ -428,7 +441,7 @@ function Write-ZLog
 
                     $mesage = " <===> {0} function : {1} <===>" -f $LogFunction , $callStack.Command
                     $mesage = $mesage.Trim()
-                    $finalMessage = "{0} :: {1} :: {2}{3}" -f $currentTime, $Level , $indent, $mesage
+                    $finalMessage = "{0} :: {1} :: {2}{3}" -f $currentTime, $Level , $indentString, $mesage
                 }
             #endregion
 
@@ -463,17 +476,6 @@ function Write-ZLog
                 }
             #endregion
         #endregion
-    }
-    End{
-        if ($IncreaseIndentDelayed.IsPresent) {
-            $Global:ZLogIndent++
-        }
-
-        if ($DecreaseIndentDelayed.IsPresent) {
-            if($Global:ZLogIndent -ne 0) {
-                $Global:ZLogIndent--
-            }
-        }
     }
 }
 
