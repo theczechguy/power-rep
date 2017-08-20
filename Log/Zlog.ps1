@@ -513,9 +513,6 @@ function Write-ZLog
     Specifies if function should in the end throw the exception.
     If not used ,function writes modified exception object to pipeline.
 .EXAMPLE
-    In this example function modifies Exception with custom message  'Failed to list HKLM:\' while preserving original exception as can be seen
-    in the output dump.
-
     try {
         get-childitem HKLM:/ -ErrorAction stop
     }
@@ -541,6 +538,9 @@ function Write-ZLog
     InvocationInfo        : System.Management.Automation.InvocationInfo
     ScriptStackTrace      : at <ScriptBlock>, C:\temp\testickky.ps1: line 38
     PipelineIterationInfo : {}
+
+    In this example function modifies Exception with custom message  'Failed to list HKLM:\' while preserving original exception as can be seen
+    in the output dump.
 #>
 function Update-Exception
 {
