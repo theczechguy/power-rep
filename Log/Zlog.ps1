@@ -50,7 +50,12 @@ function New-ZlogConfiguration
 
         [Parameter(Mandatory = $false)]
         [switch]
-        $DoNotCreateFile
+        $DoNotCreateFile,
+
+        # allow logging of debug level messages
+        [Parameter(Mandatory = $false)]
+        [switch]
+        $EnableDebug
         
     )
 
@@ -101,7 +106,7 @@ function New-ZlogConfiguration
                         Write-Debug "PARAMETER ANALYSIS : LogRotationDays -> $LogRotationDays"
                         Write-Verbose -Message "Log rotation enabled"
                         $logRotationEnabled = $true
-                        $Global:LogRotationNDays = $LogRotationDays
+                        $Global:ZLogRotationNDays = $LogRotationDays
                         break
                     }   
                     
@@ -109,8 +114,14 @@ function New-ZlogConfiguration
                         write-debug "PARAMETER ANALYSIS : LogRotationHours -> $LogRotationHours"
                         Write-Verbose -Message "Log rotation enabled"
                         $logRotationEnabled = $true
-                        $Global:LogRotationNHours = $LogRotationHours
+                        $Global:ZLogRotationNHours = $LogRotationHours
                         break
+                    }
+
+                    'EnableDebug' {
+                        write-debug "PARAMETER ANALYSIS : EnableDebug -> True"
+                        Write-Verbose -Message 'Debug level messages enabled'
+                        $global:ZEnableDebugMessages = $true
                     }
 
                     DEFAULT {
