@@ -226,47 +226,16 @@ function Write-ZLog
         [Parameter(Mandatory = $false)]
         [ValidateSet('INFO','WARNING','ERROR')]
         $Level = 'INFO',
-
         
         [Parameter(Mandatory = $false)]
         [string]
         $LiterallPath = $Global:ZLogLogFullPath,
 
-        [Parameter(
-            Mandatory = $false,
-            ParameterSetName = 'IncreaseIndent'
-        )]
-        [Parameter(ParameterSetName = 'function')]
-        [Parameter(ParameterSetName = 'message')]
-        [switch]
-        $IncreaseIndent,
-
-        [Parameter(
-            Mandatory = $false,
-            ParameterSetName = 'DecreaseIndent'
-        )]
-        [Parameter(ParameterSetName = 'function')]
-        [Parameter(ParameterSetName = 'message')]
-        [switch]
-        $DecreaseIndent,
-
-        [Parameter(
-            Mandatory = $false,
-            ParameterSetName = 'IncreaseIndentDelayed'
-        )]
-        [Parameter(ParameterSetName = 'function')]
-        [Parameter(ParameterSetName = 'message')]
-        [switch]
-        $IncreaseIndentDelayed,
-
-        [Parameter(
-            Mandatory = $false,
-            ParameterSetName = 'DecreaseIndentDelayed'
-        )]
-        [Parameter(ParameterSetName = 'function')]
-        [Parameter(ParameterSetName = 'message')]
-        [switch]
-        $DecreaseIndentDelayed,
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('Increase','Decrease','IncreaseDelayed','DecreaseDelayed','Reset')]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $Indent,
 
         [Parameter(
             Mandatory = $false
@@ -284,33 +253,44 @@ function Write-ZLog
         [ValidateSet('UTCTIME','LOCALTIME')]
         [string]
         $Timezone = 'UTCTIME'
-
-
-
     )
     Begin{
 
         #region Message indent
+            $localIndent = 0
+
             if($Global:ZLogIndent -eq $null) {
                 $Global:ZLogIndent = 0
             }
-            
 
-            if ($IncreaseIndent.IsPresent) {
-                $Global:ZLogIndent++
-            }
-
-            if ($DecreaseIndent.IsPresent) {
-                if($Global:ZLogIndent -ne 0) {
-                    $Global:ZLogIndent--
+            switch ($Indent) {
+                'Increase'{
+                    $localIndent = ++$Global:ZLogIndent
+                }
+                'IncreaseDelayed'{
+                    $localIndent = $Global:ZLogIndent++
+                }
+                'Decrease'{
+                    if($Global:ZLogIndent -ne 0) {
+                        $localIndent = --$Global:ZLogIndent
+                    }                    
+                }
+                'DecreaseDelayed'{
+                    if($Global:ZLogIndent -ne 0) {
+                        $localIndent = $Global:ZLogIndent--
+                    }                    
+                }
+                'Reset'{
+                    $Global:ZLogIndent = 0
+                    $localIndent = $Global:ZLogIndent
                 }
             }
 
-            if($Global:ZLogIndent -gt 0) {
-                $indent = "> > " * $Global:ZLogIndent
+            if($localIndent -gt 0) {
+                $indent = "> > " * $localIndent
             }
             else{
-                $indent = ''
+                $indent = [string]::Empty
             }
         #endregion
 
