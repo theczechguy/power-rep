@@ -505,13 +505,47 @@ function Write-ZLog
    Update exception object
 .DESCRIPTION
    Set's ErrorDetails exception property to desired message
+.PARAMETER Exception
+    Exception object that will be modified
+.PARAMETER ErrorDetailMessage
+    Custom message that will be assigned to errordetails property of Exception object
+.PARAMETER Throw
+    Specifies if function should in the end throw the exception.
+    If not used ,function writes modified exception object to pipeline.
 .EXAMPLE
-   Example of how to use this cmdlet
+    In this example function modifies Exception with custom message  'Failed to list HKLM:\' while preserving original exception as can be seen
+    in the output dump.
+
+    try {
+        get-childitem HKLM:/ -ErrorAction stop
+    }
+    catch {
+        $ex = Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to list HKLM:\'
+        throw $ex
+    }
+
+    writeErrorStream      : True
+    PSMessageDetails      : 
+    Exception             : System.Security.SecurityException: Požadovaný přístup k registru není povolen.
+                            v System.ThrowHelper.ThrowSecurityException(ExceptionResource resource)
+                            v Microsoft.Win32.RegistryKey.OpenSubKey(String name, Boolean writable)
+                            v Microsoft.PowerShell.Commands.RegistryWrapper.OpenSubKey(String name, Boolean writable)
+                            v Microsoft.PowerShell.Commands.RegistryProvider.GetRegkeyForPath(String path, Boolean writeAccess)
+                            v Microsoft.PowerShell.Commands.RegistryProvider.GetChildItems(String path, Boolean recurse, UInt32 depth)
+                            Zóna sestavení, u něhož došlo k chybě:
+                            MyComputer
+    TargetObject          : HKEY_LOCAL_MACHINE\BCD00000000
+    CategoryInfo          : PermissionDenied: (HKEY_LOCAL_MACHINE\BCD00000000:String) [Get-ChildItem], SecurityException
+    FullyQualifiedErrorId : System.Security.SecurityException,Microsoft.PowerShell.Commands.GetChildItemCommand
+    ErrorDetails          : Failed to list HKLM:\
+    InvocationInfo        : System.Management.Automation.InvocationInfo
+    ScriptStackTrace      : at <ScriptBlock>, C:\temp\testickky.ps1: line 38
+    PipelineIterationInfo : {}
 #>
 function Update-Exception
 {
     [CmdletBinding()]
-    [OutputType([System.Exception])]
+    [OutputType([System.Management.Automation.ErrorRecord])]
     Param
     (
         # Exception object
@@ -536,8 +570,10 @@ function Update-Exception
         $Exception.errordetails = $ErrorDetailMessage
 
         if ($Throw.IsPresent) {
+            Write-Verbose -Message 'Throwing exception'
             throw $Exception
         } else {
+            Write-Verbose -Message 'Writing exception to pipeline'
             Write-Output $Exception
         }
     }
