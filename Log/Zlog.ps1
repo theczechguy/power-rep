@@ -300,7 +300,7 @@ function Write-ZLog
             }
 
             if($localIndent -gt 0) {
-                $indentString = "> > " * $localIndent
+                $indentString = ">> " * $localIndent
             }
             else{
                 $indentString = [string]::Empty
@@ -405,7 +405,7 @@ function Write-ZLog
                         #endregion
 
                         #region remove empty spaces from left side , count is determined by the previous step
-                            $finalMessage += "{0} :: {1} :: {2}" -f $currentTime, $Level , $indentString # first line empty
+                            $finalMessage += "{0} <:> {1} <:> {2}" -f $currentTime, $Level , $indentString # first line empty
                             $lineLength = $finalMessage.Length # length of the first line, without any message
 
                             $splitMessage| ForEach-Object -process {
@@ -425,7 +425,7 @@ function Write-ZLog
                             }
                         #endregion
                     } else {
-                        $finalMessage = "{0} :: {1} :: {2}{3}" -f $currentTime, $Level , $indentString , $Message
+                        $finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString , $Message
                     }
                 }
             #endregion
@@ -439,9 +439,9 @@ function Write-ZLog
                         $callStack = $callStack[($callStack.count -1)]
                     }
 
-                    $mesage = " <===> {0} function : {1} <===>" -f $LogFunction , $callStack.Command
+                    $mesage = " <~~~~> {0} function : {1} <~~~~>" -f $LogFunction , $callStack.Command
                     $mesage = $mesage.Trim()
-                    $finalMessage = "{0} :: {1} :: {2}{3}" -f $currentTime, $Level , $indentString, $mesage
+                    $finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString, $mesage
                 }
             #endregion
 
