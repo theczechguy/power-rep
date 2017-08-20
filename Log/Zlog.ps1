@@ -77,7 +77,7 @@ function New-ZlogConfiguration
                     $LiteralLogFolderPath = New-Item -ItemType Directory -Path $LiteralLogFolderPath
                 }
                 catch {
-                    throw $_
+                    Update-Exception -Exception $_ -ErrorDetailMessage "Failed to create log folder : $LiteralLogFolderPath" -Throw
                 }
             }
         #endregion
@@ -185,8 +185,12 @@ function New-ZlogConfiguration
 
             #endregion
 
-            $fullLiteralPath = Join-Path -Path $LiteralLogFolderPath -ChildPath $customizedLogname
-
+            try {
+                $fullLiteralPath = Join-Path -Path $LiteralLogFolderPath -ChildPath $customizedLogname    
+            }
+            catch {
+                Update-Exception -Exception $_ -ErrorDetailMessage 'Unable to combine logname with logpath' -Throw
+            }
         #endregion
 
         #region create file
@@ -196,7 +200,12 @@ function New-ZlogConfiguration
             } else {
 
                 if (!(Test-Path -LiteralPath $fullLiteralPath -ErrorAction SilentlyContinue)) {
-                    $null = New-Item -ItemType File -Path $fullLiteralPath -ErrorAction Continue   
+                    try {
+                        $null = New-Item -ItemType File -Path $fullLiteralPath
+                    }
+                    catch {
+                        Update-Exception -Exception $_ -ErrorDetailMessage "Failed to create logfile : $fullLiteralPath" -Throw
+                    }
                 } else {
                     Write-Verbose -Message "Logfile already exists !"
                 }
@@ -493,7 +502,13 @@ function Write-ZLog
 
             #region file
                 if($logToFile -eq $true) {
-                    $finalMessage | Out-File -LiteralPath $LiterallPath -Append -force # out-file does not block file for reading
+                    try {
+                        $finalMessage | Out-File -LiteralPath $LiterallPath -Append -force # out-file does not block file for reading    
+                    }
+                    catch {
+                        Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to write log message to file' -Throw
+                    }
+                    
                 }
             #endregion
         #endregion
