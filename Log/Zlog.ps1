@@ -73,7 +73,7 @@ function New-ZlogConfiguration
                     $LiteralLogFolderPath = New-Item -ItemType Directory -Path $LiteralLogFolderPath
                 }
                 catch {
-                    throw
+                    throw $_
                 }
             }
         #endregion
@@ -133,6 +133,8 @@ function New-ZlogConfiguration
                     'LOCALTIME' {
                         $currentTime = get-date
                     }
+
+                    Default {}
                 }
             #endregion
 
@@ -186,7 +188,7 @@ function New-ZlogConfiguration
                 if (!(Test-Path -LiteralPath $fullLiteralPath -ErrorAction SilentlyContinue)) {
                     $null = New-Item -ItemType File -Path $fullLiteralPath -ErrorAction Continue   
                 } else {
-                    Write-Warning -Message "Logfile already exists !"
+                    Write-Verbose -Message "Logfile already exists !"
                 }
             }
 
@@ -208,58 +210,83 @@ function Write-ZLog
     (
         [Parameter(Mandatory=$true,
                     ValueFromPipeline = $true,
-                   Position=0)]
+                   Position=0,
+                   ParameterSetName = 'message')]
         [PSObject]
         $Message,
 
-        # message level
+        # log message indicating function start
+        [Parameter(Mandatory = $true,
+                    Position = 0,
+                    ParameterSetName = 'function')]
+        [ValidateSet('Start','End')]
+        [string]
+        $LogFunction = 'Start',
+
         [Parameter(Mandatory = $false)]
         [ValidateSet('INFO','WARNING','ERROR')]
         $Level = 'INFO',
 
-        # full log path
+        
         [Parameter(Mandatory = $false)]
         [string]
         $LiterallPath = $Global:ZLogLogFullPath,
 
-        # move message to right side
         [Parameter(
-            Mandatory = $false
+            Mandatory = $false,
+            ParameterSetName = 'IncreaseIndent'
         )]
+        [Parameter(ParameterSetName = 'function')]
+        [Parameter(ParameterSetName = 'message')]
         [switch]
         $IncreaseIndent,
 
-        # move message to left side
         [Parameter(
-            Mandatory = $false
+            Mandatory = $false,
+            ParameterSetName = 'DecreaseIndent'
         )]
+        [Parameter(ParameterSetName = 'function')]
+        [Parameter(ParameterSetName = 'message')]
         [switch]
         $DecreaseIndent,
 
-        # do not write message to console
+        [Parameter(
+            Mandatory = $false,
+            ParameterSetName = 'IncreaseIndentDelayed'
+        )]
+        [Parameter(ParameterSetName = 'function')]
+        [Parameter(ParameterSetName = 'message')]
+        [switch]
+        $IncreaseIndentDelayed,
+
+        [Parameter(
+            Mandatory = $false,
+            ParameterSetName = 'DecreaseIndentDelayed'
+        )]
+        [Parameter(ParameterSetName = 'function')]
+        [Parameter(ParameterSetName = 'message')]
+        [switch]
+        $DecreaseIndentDelayed,
+
         [Parameter(
             Mandatory = $false
         )]
         [switch]
         $SupressConsoleOutput,
 
-        # do not write message to log file
         [Parameter(
             Mandatory = $false
         )]
         [switch]
         $SupressFileOutput,
 
-        # utc/ local time
         [Parameter(Mandatory = $false)]
         [ValidateSet('UTCTIME','LOCALTIME')]
         [string]
-        $Timezone = 'UTCTIME',
+        $Timezone = 'UTCTIME'
 
-        # check log rotation limits , if rotation applicable perform it
-        [Parameter(Mandatory = $false)]
-        [switch]
-        $AllowRotationHere
+
+
     )
     Begin{
 
@@ -267,6 +294,7 @@ function Write-ZLog
             if($Global:ZLogIndent -eq $null) {
                 $Global:ZLogIndent = 0
             }
+            
 
             if ($IncreaseIndent.IsPresent) {
                 $Global:ZLogIndent++
@@ -287,11 +315,13 @@ function Write-ZLog
         #endregion
 
         #region log target
-            # log to file
+            
+            # log to file ?
+
             if($SupressFileOutput.IsPresent) {
                 Write-Verbose -Message "Logfile output is supressed !"
             } elseif([string]::IsNullOrEmpty($LiterallPath)) {
-                Write-Warning -Message "ZLogPath variable is not defined or empty. Logfile will not be created !"
+                Write-Verbose -Message "ZLogPath variable is not defined or empty. Logfile will not be created !"
                 $logToFile = $false
             } else {
                 Write-Verbose -Message "Logging to file : $LiterallPath"
@@ -305,12 +335,6 @@ function Write-ZLog
             } else {
                 $logToConsole = $true
             }
-
-        #endregion
-
-        #region logrotation
-
-            
 
         #endregion
     }
@@ -346,68 +370,87 @@ function Write-ZLog
 
             #endregion
 
-            if($Message -isnot [string] -AND $Message -isnot [int]) {
-                Write-Verbose "Datatype of current message : $($Message.GetType())"
-                Write-Verbose "Converting to string"
-                $Message = $Message | Format-List | Out-String
-            }
-
-            $splitMessage = $Message -split([environment]::NewLine) # split message by lines
-
-            if($splitMessage.Count -gt 1 -AND !([string]::IsNullOrEmpty($splitMessage))) {
-
-                Write-Verbose "Received multiline input"
-
-                #region identify the line with lowest count of empty spaces from left side
-                    $splitMessage | ForEach-Object -process {
-                        $currentLine = $_ 
+            #region parameterset message
+                if ($PSCmdlet.ParameterSetName -eq 'message') {
                     
-                        Write-Debug "LINE - >$currentLine<"
+                    if($Message -isnot [string] -AND $Message -isnot [int]) {
+                        Write-debug "Datatype of current message : $($Message.GetType())"
+                        Write-debug "Converting to string"
+                        $Message = $Message | Format-List | Out-String
+                    }
 
-                        if(!([string]::IsNullOrEmpty($currentLine)) -AND !([string]::IsNullOrWhiteSpace($currentLine))) {
-                            $countOfSpacesFromStart = $null
-                            $countOfSpacesFromStart = $currentLine.Length - $currentLine.TrimStart(' ').Length
-                
-                            Write-Debug "Count of Spaces from Start : $countOfSpacesFromStart"
+                    $splitMessage = $Message -split([environment]::NewLine) # split message by lines
 
-                            if($lowestCountOfSpaces -eq 0) {
-                                $lowestCountOfSpaces = $countOfSpacesFromStart
-                            } elseif($lowestCountOfSpaces -gt $countOfSpacesFromStart -AND $countOfSpacesFromStart -gt 0) {
-                                $lowestCountOfSpaces = $countOfSpacesFromStart
+                    if($splitMessage.Count -gt 1 -AND !([string]::IsNullOrEmpty($splitMessage))) {
+
+                        Write-Verbose "Received multiline input"
+
+                        #region identify the line with lowest count of empty spaces from left side
+                            $splitMessage | ForEach-Object -process {
+                                $currentLine = $_ 
+                            
+                                Write-Debug "LINE - >$currentLine<"
+
+                                if(!([string]::IsNullOrEmpty($currentLine)) -AND !([string]::IsNullOrWhiteSpace($currentLine))) {
+                                    $countOfSpacesFromStart = $null
+                                    $countOfSpacesFromStart = $currentLine.Length - $currentLine.TrimStart(' ').Length
+                        
+                                    Write-Debug "Count of Spaces from Start : $countOfSpacesFromStart"
+
+                                    if($lowestCountOfSpaces -eq 0) {
+                                        $lowestCountOfSpaces = $countOfSpacesFromStart
+                                    } elseif($lowestCountOfSpaces -gt $countOfSpacesFromStart -AND $countOfSpacesFromStart -gt 0) {
+                                        $lowestCountOfSpaces = $countOfSpacesFromStart
+                                    }
+                                    #>
+
+                                    Write-Debug "Lowest Count of spaces : $lowestCountOfSpaces"
+                                }
+                        
                             }
-                            #>
+                            Write-Debug "Final lowest count of spaces : $lowestCountOfSpaces"
+                        #endregion
 
-                            Write-Debug "Lowest Count of spaces : $lowestCountOfSpaces"
-                        }
-                
+                        #region remove empty spaces from left side , count is determined by the previous step
+                            $finalMessage += "{0} :: {1} :: {2}" -f $currentTime, $Level , $indent # first line empty
+                            $lineLength = $finalMessage.Length # length of the first line, without any message
+
+                            $splitMessage| ForEach-Object -process {
+            
+                                $currentLine = $_
+                                $messageFirstStage = $null
+
+                                if(!([string]::IsNullOrEmpty($currentLine)) -AND !([string]::IsNullOrWhiteSpace($currentLine))) {
+                                    $messageFirstStage+= ($currentLine.Substring($lowestCountOfSpaces)).TrimEnd([environment]::NewLine)
+                                }
+                                else {
+                                    $messageFirstStage += $currentLine
+                                }
+
+                                $messageSecondStage = "{0}{1}" -f (' ' * $lineLength) , $messageFirstStage
+                                $finalMessage += "{0}{1}" -f [environment]::NewLine , $messageSecondStage
+                            }
+                        #endregion
+                    } else {
+                        $finalMessage = "{0} :: {1} :: {2}{3}" -f $currentTime, $Level , $indent , $Message
                     }
-                    Write-Debug "Final lowest count of spaces : $lowestCountOfSpaces"
-                #endregion
+                }
+            #endregion
 
-                #region remove empty spaces from left side , count is determined by the previous step
-                    $finalMessage += "{0} :: {1} :: {2}" -f $currentTime, $Level , $indent # first line empty
-                    $lineLength = $finalMessage.Length # length of the first line, without any message
+            #region parameterset function
 
-                    $splitMessage| ForEach-Object -process {
-    
-                        $currentLine = $_
-                        $messageFirstStage = $null
-
-                        if(!([string]::IsNullOrEmpty($currentLine)) -AND !([string]::IsNullOrWhiteSpace($currentLine))) {
-                            $messageFirstStage+= ($currentLine.Substring($lowestCountOfSpaces)).TrimEnd([environment]::NewLine)
-                        }
-                        else {
-                            $messageFirstStage += $currentLine
-                        }
-
-                        $messageSecondStage = "{0}{1}" -f (' ' * $lineLength) , $messageFirstStage
-                        $finalMessage += "{0}{1}" -f [environment]::NewLine , $messageSecondStage
+                if ($PSCmdlet.ParameterSetName -eq 'function') {
+                    
+                    $callStack = Get-PSCallStack
+                    if ($callStack.count -gt 1) {
+                        $callStack = $callStack[($callStack.count -1)]
                     }
-                #endregion
-            } else {
-                $finalMessage = "{0} :: {1} :: {2}{3}" -f $currentTime, $Level , $indent , $Message
-            }
 
+                    $mesage = " <===> {0} function : {1} <===>" -f $LogFunction , $callStack.Command
+                    $mesage = $mesage.Trim()
+                    $finalMessage = "{0} :: {1} :: {2}{3}" -f $currentTime, $Level , $indent, $mesage
+                }
+            #endregion
 
 
         #region output
@@ -440,5 +483,51 @@ function Write-ZLog
                 }
             #endregion
         #endregion
+    }
+    End{
+        if ($IncreaseIndentDelayed.IsPresent) {
+            $Global:ZLogIndent++
+        }
+
+        if ($DecreaseIndentDelayed.IsPresent) {
+            if($Global:ZLogIndent -ne 0) {
+                $Global:ZLogIndent--
+            }
+        }
+    }
+}
+
+<#
+.Synopsis
+   Short description
+.DESCRIPTION
+   Long description
+.EXAMPLE
+   Example of how to use this cmdlet
+.EXAMPLE
+   Another example of how to use this cmdlet
+#>
+function Handle-Exception
+{
+    [CmdletBinding()]
+    [OutputType([void])]
+    Param
+    (
+        # Exception object
+        [Parameter(Mandatory=$true,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=0)]
+        [System.Exception]
+        $Exception
+    )
+
+    Begin {
+
+    }
+    Process {
+
+    }
+    End {
+
     }
 }
