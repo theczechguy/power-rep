@@ -143,8 +143,6 @@ function New-ZlogConfiguration
                     'LOCALTIME' {
                         $currentTime = get-date
                     }
-
-                    Default {}
                 }
             #endregion
 
@@ -242,7 +240,17 @@ function Write-ZLog
         [string]
         $LogFunction = 'Start',
 
+        # debug options
+        [Parameter(Mandatory = $true,
+                    Position = 0,
+                    ParameterSetName = 'debugoptions')]
+        [ValidateSet('DumpVariablesScopeGlobal','DumpVariablesScopeLocal')]
+        [string]
+        $DebugOptions,
+
         [Parameter(Mandatory = $false)]
+        [Parameter(ParameterSetName = 'message')]
+        [Parameter(ParameterSetName = 'function')]
         [ValidateSet('INFO','WARNING','ERROR','DEBUG')]
         $Level = 'INFO',
         
@@ -252,7 +260,6 @@ function Write-ZLog
 
         [Parameter(Mandatory = $false)]
         [ValidateSet('Increase','Decrease','IncreaseDelayed','DecreaseDelayed','Reset')]
-        [ValidateNotNullOrEmpty()]
         [string]
         $Indent,
 
@@ -389,68 +396,11 @@ function Write-ZLog
                         Write-Verbose 'DEBUG level messages are disabled'
                         continue
                     }
-
                     
                     if($Message -isnot [string] -AND $Message -isnot [int]) {
                         Write-debug "Datatype of current message : $($Message.GetType())"
                         Write-debug "Converting to string"
                         $Message = $Message | Format-List | Out-String
-                    }
-
-                    $splitMessage = $Message -split([environment]::NewLine) # split message by lines
-
-                    if($splitMessage.Count -gt 1 -AND !([string]::IsNullOrEmpty($splitMessage))) {
-
-                        Write-Verbose "Received multiline input"
-
-                        #region identify the line with lowest count of empty spaces from left side
-                            $splitMessage | ForEach-Object -process {
-                                $currentLine = $_ 
-                            
-                                Write-Debug "LINE - >$currentLine<"
-
-                                if(!([string]::IsNullOrEmpty($currentLine)) -AND !([string]::IsNullOrWhiteSpace($currentLine))) {
-                                    $countOfSpacesFromStart = $null
-                                    $countOfSpacesFromStart = $currentLine.Length - $currentLine.TrimStart(' ').Length
-                        
-                                    Write-Debug "Count of Spaces from Start : $countOfSpacesFromStart"
-
-                                    if($lowestCountOfSpaces -eq 0) {
-                                        $lowestCountOfSpaces = $countOfSpacesFromStart
-                                    } elseif($lowestCountOfSpaces -gt $countOfSpacesFromStart -AND $countOfSpacesFromStart -gt 0) {
-                                        $lowestCountOfSpaces = $countOfSpacesFromStart
-                                    }
-                                    #>
-
-                                    Write-Debug "Lowest Count of spaces : $lowestCountOfSpaces"
-                                }
-                        
-                            }
-                            Write-Debug "Final lowest count of spaces : $lowestCountOfSpaces"
-                        #endregion
-
-                        #region remove empty spaces from left side , count is determined by the previous step
-                            $finalMessage += "{0} <:> {1} <:> {2}" -f $currentTime, $Level , $indentString # first line empty
-                            $lineLength = $finalMessage.Length # length of the first line, without any message
-
-                            $splitMessage| ForEach-Object -process {
-            
-                                $currentLine = $_
-                                $messageFirstStage = $null
-
-                                if(!([string]::IsNullOrEmpty($currentLine)) -AND !([string]::IsNullOrWhiteSpace($currentLine))) {
-                                    $messageFirstStage+= ($currentLine.Substring($lowestCountOfSpaces)).TrimEnd([environment]::NewLine)
-                                }
-                                else {
-                                    $messageFirstStage += $currentLine
-                                }
-
-                                $messageSecondStage = "{0}{1}" -f (' ' * $lineLength) , $messageFirstStage
-                                $finalMessage += "{0}{1}" -f [environment]::NewLine , $messageSecondStage
-                            }
-                        #endregion
-                    } else {
-                        $finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString , $Message
                     }
                 }
             #endregion
@@ -466,7 +416,82 @@ function Write-ZLog
 
                     $mesage = " <~~~~> {0} function : {1} <~~~~>" -f $LogFunction , $callStack.Command
                     $mesage = $mesage.Trim()
-                    $finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString, $mesage
+                    #$finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString, $mesage
+                }
+            #endregion
+
+            #region parameterset debugoptions
+                if ($PSCmdlet.ParameterSetName -eq 'debugoptions') {
+                    $message = [string]::Empty
+
+                    switch ($DebugOptions) {
+
+                        'DumpVariablesScopeGlobal' {
+                            $message = Get-Variable -Scope 'Global' -ErrorAction Continue | Format-List | Out-String
+                        }
+
+                        'DumpVariablesScopeLocal' {
+                            $message =  Get-Variable -Scope 'Local' -ErrorAction Continue | Format-List | Out-String
+                        }
+                    }
+                }
+            #endregion
+
+            #region process message
+                $splitMessage = $Message -split([environment]::NewLine) # split message by lines
+                
+                if($splitMessage.Count -gt 1 -AND !([string]::IsNullOrEmpty($splitMessage))) {
+
+                    Write-Verbose "Received multiline input"
+
+                    #region identify the line with lowest count of empty spaces from left side
+                        $splitMessage | ForEach-Object -process {
+                            $currentLine = $_ 
+                        
+                            Write-Debug "LINE - >$currentLine<"
+
+                            if(!([string]::IsNullOrEmpty($currentLine)) -AND !([string]::IsNullOrWhiteSpace($currentLine))) {
+                                $countOfSpacesFromStart = $null
+                                $countOfSpacesFromStart = $currentLine.Length - $currentLine.TrimStart(' ').Length
+                    
+                                Write-Debug "Count of Spaces from Start : $countOfSpacesFromStart"
+
+                                if($lowestCountOfSpaces -eq 0) {
+                                    $lowestCountOfSpaces = $countOfSpacesFromStart
+                                } elseif($lowestCountOfSpaces -gt $countOfSpacesFromStart -AND $countOfSpacesFromStart -gt 0) {
+                                    $lowestCountOfSpaces = $countOfSpacesFromStart
+                                }
+                                #>
+
+                                Write-Debug "Lowest Count of spaces : $lowestCountOfSpaces"
+                            }
+                    
+                        }
+                        Write-Debug "Final lowest count of spaces : $lowestCountOfSpaces"
+                    #endregion
+
+                    #region remove empty spaces from left side , count is determined by the previous step
+                        $finalMessage += "{0} <:> {1} <:> {2}" -f $currentTime, $Level , $indentString # first line empty
+                        $lineLength = $finalMessage.Length # length of the first line, without any message
+
+                        $splitMessage| ForEach-Object -process {
+        
+                            $currentLine = $_
+                            $messageFirstStage = $null
+
+                            if(!([string]::IsNullOrEmpty($currentLine)) -AND !([string]::IsNullOrWhiteSpace($currentLine))) {
+                                $messageFirstStage+= ($currentLine.Substring($lowestCountOfSpaces)).TrimEnd([environment]::NewLine)
+                            }
+                            else {
+                                $messageFirstStage += $currentLine
+                            }
+
+                            $messageSecondStage = "{0}{1}" -f (' ' * $lineLength) , $messageFirstStage
+                            $finalMessage += "{0}{1}" -f [environment]::NewLine , $messageSecondStage
+                        }
+                    #endregion
+                } else {
+                    $finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString , $Message
                 }
             #endregion
 
