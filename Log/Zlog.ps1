@@ -364,6 +364,7 @@ function Write-ZLog
                 $countOfSpacesFromStart = $null
                 
                 $splitMessage = $null
+                $actuallMessage = $null
                 $currentLine = $null
                 $finalMessage = $null
                 $currentTime = $null
@@ -400,7 +401,9 @@ function Write-ZLog
                     if($Message -isnot [string] -AND $Message -isnot [int]) {
                         Write-debug "Datatype of current message : $($Message.GetType())"
                         Write-debug "Converting to string"
-                        $Message = $Message | Format-List | Out-String
+                        $actuallMessage = $Message | Format-List | Out-String
+                    } else {
+                        $actuallMessage = $Message
                     }
                 }
             #endregion
@@ -411,34 +414,32 @@ function Write-ZLog
                     
                     $callStack = Get-PSCallStack
                     if ($callStack.count -gt 1) {
-                        $callStack = $callStack[($callStack.count -1)]
+                        $callStack = $callStack[($callStack.count -2)]
                     }
 
-                    $mesage = " <~~~~> {0} function : {1} <~~~~>" -f $LogFunction , $callStack.Command
-                    $mesage = $mesage.Trim()
+                    $actuallMessage = " <~~~~> {0} function : {1} <~~~~>" -f $LogFunction , $callStack.Command
+                    $actuallMessage = $actuallMessage.Trim()
                     #$finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString, $mesage
                 }
             #endregion
 
             #region parameterset debugoptions
-                if ($PSCmdlet.ParameterSetName -eq 'debugoptions') {
-                    $message = [string]::Empty
-
+                if ($PSCmdlet.ParameterSetName -eq 'debugoptions') {                  
                     switch ($DebugOptions) {
 
                         'DumpVariablesScopeGlobal' {
-                            $message = Get-Variable -Scope 'Global' -ErrorAction Continue | Format-List | Out-String
+                            $actuallMessage = Get-Variable -Scope 'Global' -ErrorAction Continue | Format-List | Out-String
                         }
 
                         'DumpVariablesScopeLocal' {
-                            $message =  Get-Variable -Scope 'Local' -ErrorAction Continue | Format-List | Out-String
+                            $actuallMessage =  Get-Variable -Scope 'Local' -ErrorAction Continue | Format-List | Out-String
                         }
                     }
                 }
             #endregion
 
             #region process message
-                $splitMessage = $Message -split([environment]::NewLine) # split message by lines
+                $splitMessage = $actuallMessage -split([environment]::NewLine) # split message by lines
                 
                 if($splitMessage.Count -gt 1 -AND !([string]::IsNullOrEmpty($splitMessage))) {
 
@@ -491,7 +492,7 @@ function Write-ZLog
                         }
                     #endregion
                 } else {
-                    $finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString , $Message
+                    $finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString , $actuallMessage
                 }
             #endregion
 
