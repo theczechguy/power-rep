@@ -358,7 +358,6 @@ function Write-ZLog
         #endregion
     }
     Process{
-
             #region variable declaration
                 $lowestCountOfSpaces = 0 # lowest count of spaces from left side
                 $countOfSpacesFromStart = $null
@@ -387,7 +386,6 @@ function Write-ZLog
                         $currentTime = (get-date).ToUniversalTime()
                     }
                 }
-
             #endregion
 
             #region parameterset message
@@ -409,7 +407,6 @@ function Write-ZLog
             #endregion
 
             #region parameterset function
-
                 if ($PSCmdlet.ParameterSetName -eq 'function') {
                     
                     $callStack = Get-PSCallStack
@@ -499,7 +496,6 @@ function Write-ZLog
 
         #region output
             #region console
-
                 if($logToConsole -eq $true) {
                     switch ($Level)
                     {
@@ -523,7 +519,6 @@ function Write-ZLog
                         }
                     }
                 }
-
             #endregion
 
             #region file
