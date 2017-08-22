@@ -450,12 +450,12 @@ function Write-ZLog
                     switch ($DebugOptions) {
                         'DumpVariablesScopeGlobal' {
                             Write-Verbose 'Dumping global variables'
-                            $actuallMessage = Get-Variable -Scope 'Global' -ErrorAction Continue | Format-Table -Wrap | Out-String
+                            $actuallMessage = Get-Variable -Scope 'Global' -ErrorAction Continue | Format-List | Out-String
                         }
 
                         'DumpVariablesScopeLocal' {
                             Write-Verbose -Message 'Dumping local variables'
-                            $actuallMessage =  Get-Variable -Scope 'Local' -ErrorAction Continue | Format-Table -Wrap | Out-String
+                            $actuallMessage =  Get-Variable -Scope 'Local' -ErrorAction Continue | Format-List | Out-String
                         }
                     }
                 }
@@ -529,7 +529,7 @@ function Write-ZLog
                         }
 
                         'DEBUG' {
-                            Write-Host -Object $finalMessage.ToString() -ForegroundColor Cyan
+                            Write-Host -Object $finalMessage.ToString() -ForegroundColor Magenta -BackgroundColor Black
                             break
                         }
 
