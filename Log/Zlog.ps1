@@ -402,29 +402,27 @@ function Write-ZLog
                         continue
                     }
                     
-                    if($Message -isnot [string] -AND $Message -isnot [int]) {
-                        Write-debug "Datatype of current message : $($Message.GetType())"
-                        Write-debug "Converting to string"
+                    Write-debug "Datatype of current message : $($Message.GetType())"
+                    Write-debug "Converting to string"
 
-                        switch ($Message) {
-                            {($_ -is [int] -or $_ -is [string])} {
-                                $actuallMessage = $Message
-                                break
-                            }
+                    switch ($Message) {
+                        {($_ -is [int] -or $_ -is [string])} {
+                            $actuallMessage = $Message
+                            break
+                        }
 
-                            {$_ -is [hashtable]} {
-                                $actuallMessage = $Message | Format-Table | Out-String -Width 4096
-                                break
-                            }
+                        {$_ -is [hashtable]} {
+                            $actuallMessage = $Message | Format-Table | Out-String -Width 4096
+                            break
+                        }
 
-                            {$_ -is [System.Management.Automation.PSCustomObject]} {
-                                $actuallMessage = $Message | Format-Table | Out-String -Width 4096
-                                break
-                            }
+                        {$_ -is [System.Management.Automation.PSCustomObject]} {
+                            $actuallMessage = $Message | Format-Table | Out-String -Width 4096
+                            break
+                        }
 
-                            Default {
-                                $actuallMessage = $Message | Format-List | Out-String -Width 4096
-                            }
+                        Default {
+                            $actuallMessage = $Message | Format-List | Out-String -Width 4096
                         }
                     }
                 }
@@ -452,12 +450,12 @@ function Write-ZLog
                     switch ($DebugOptions) {
                         'DumpVariablesScopeGlobal' {
                             Write-Verbose 'Dumping global variables'
-                            $actuallMessage = Get-Variable -Scope 'Global' -ErrorAction Continue | Format-List | Out-String
+                            $actuallMessage = Get-Variable -Scope 'Global' -ErrorAction Continue | Format-Table -Wrap | Out-String
                         }
 
                         'DumpVariablesScopeLocal' {
                             Write-Verbose -Message 'Dumping local variables'
-                            $actuallMessage =  Get-Variable -Scope 'Local' -ErrorAction Continue | Format-List | Out-String
+                            $actuallMessage =  Get-Variable -Scope 'Local' -ErrorAction Continue | Format-Table -Wrap | Out-String
                         }
                     }
                 }
@@ -548,16 +546,13 @@ function Write-ZLog
                     catch {
                         Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to write log message to file' -Throw
                     }
-                    
                 }
             #endregion
 
             #region pipeline
-
                 if ($logToPipeline -eq $true) {
                     Write-Output -InputObject $finalMessage.ToString()
                 }
-
             #endregion
         #endregion
     }
