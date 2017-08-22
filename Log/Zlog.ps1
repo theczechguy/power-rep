@@ -83,7 +83,7 @@ function New-ZlogConfiguration
         #endregion
 
         #region analyze parameters
-            # loop through all used parameter names
+            # loop through all used parameter names 
             $MyInvocation.BoundParameters.Keys | Where-Object {$_ -notin('LogName','LiteralLogFolderPath')} | ForEach-Object -Process {
 
                 $currentParameter = $_
@@ -121,13 +121,7 @@ function New-ZlogConfiguration
                         write-debug "PARAMETER ANALYSIS : EnableDebug -> True"
                         Write-Verbose -Message 'Debug level messages enabled'
                         $global:ZLogEnableDebugMessages = $true
-                    }
-
-                    DEFAULT {
-                        write-debug "PARAMETER ANALYSIS : Unknown parameter : $currentParameter"
-                        break
-                    }
-                    
+                    }                    
                 }
             }
         #endregion
@@ -222,7 +216,8 @@ function New-ZlogConfiguration
 
 function Write-ZLog
 {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'message')]
+    [OutputType([string])]
     Param
     (
         [Parameter(Mandatory=$true,
@@ -278,7 +273,12 @@ function Write-ZLog
         [Parameter(Mandatory = $false)]
         [ValidateSet('UTCTIME','LOCALTIME')]
         [string]
-        $Timezone = 'UTCTIME'
+        $Timezone = 'UTCTIME',
+
+        # send output message to pipeline
+        [Parameter(Mandatory = $false)]
+        [switch]
+        $PassThrough
     )
     Begin{
 
@@ -355,16 +355,22 @@ function Write-ZLog
                 $logToConsole = $true
             }
 
+            if ($PassThrough.IsPresent) {
+                Write-Verbose -Message 'Message will be sent to pipeline'
+                $logToPipeline = $true
+            } else {
+                $logToPipeline = $false
+            }
+
         #endregion
     }
     Process{
             #region variable declaration
-                $lowestCountOfSpaces = 0 # lowest count of spaces from left side
+                $lowestCountOfSpaces = [System.Int32]::MaxValue # lowest count of spaces from left side
                 $countOfSpacesFromStart = $null
                 
                 $splitMessage = $null
                 $actuallMessage = $null
-                $currentLine = $null
                 $finalMessage = $null
                 $currentTime = $null
 
@@ -399,9 +405,27 @@ function Write-ZLog
                     if($Message -isnot [string] -AND $Message -isnot [int]) {
                         Write-debug "Datatype of current message : $($Message.GetType())"
                         Write-debug "Converting to string"
-                        $actuallMessage = $Message | Format-List | Out-String
-                    } else {
-                        $actuallMessage = $Message
+
+                        switch ($Message) {
+                            {($_ -is [int] -or $_ -is [string])} {
+                                $actuallMessage = $Message
+                                break
+                            }
+
+                            {$_ -is [hashtable]} {
+                                $actuallMessage = $Message | Format-Table | Out-String -Width 4096
+                                break
+                            }
+
+                            {$_ -is [System.Management.Automation.PSCustomObject]} {
+                                $actuallMessage = $Message | Format-Table | Out-String -Width 4096
+                                break
+                            }
+
+                            Default {
+                                $actuallMessage = $Message | Format-List | Out-String -Width 4096
+                            }
+                        }
                     }
                 }
             #endregion
@@ -410,8 +434,9 @@ function Write-ZLog
                 if ($PSCmdlet.ParameterSetName -eq 'function') {
                     
                     $callStack = Get-PSCallStack
-                    if ($callStack.count -gt 1) {
-                        $callStack = $callStack[($callStack.count -2)]
+                    Write-Debug -Message "Callstack count : $($callStack.count)"
+                    if ($callStack.count -ge 1) {
+                        $callStack = $callStack[1]
                     }
 
                     $actuallMessage = " <~~~~> {0} function : {1} <~~~~>" -f $LogFunction , $callStack.Command
@@ -421,14 +446,17 @@ function Write-ZLog
             #endregion
 
             #region parameterset debugoptions
-                if ($PSCmdlet.ParameterSetName -eq 'debugoptions') {                  
-                    switch ($DebugOptions) {
+                if ($PSCmdlet.ParameterSetName -eq 'debugoptions') {     
+                    $Level = 'DEBUG'
 
+                    switch ($DebugOptions) {
                         'DumpVariablesScopeGlobal' {
+                            Write-Verbose 'Dumping global variables'
                             $actuallMessage = Get-Variable -Scope 'Global' -ErrorAction Continue | Format-List | Out-String
                         }
 
                         'DumpVariablesScopeLocal' {
+                            Write-Verbose -Message 'Dumping local variables'
                             $actuallMessage =  Get-Variable -Scope 'Local' -ErrorAction Continue | Format-List | Out-String
                         }
                     }
@@ -437,62 +465,53 @@ function Write-ZLog
 
             #region process message
                 $splitMessage = $actuallMessage -split([environment]::NewLine) # split message by lines
-                
+                $finalMessage = New-Object System.Text.StringBuilder
+
                 if($splitMessage.Count -gt 1 -AND !([string]::IsNullOrEmpty($splitMessage))) {
 
                     Write-Verbose "Received multiline input"
 
                     #region identify the line with lowest count of empty spaces from left side
-                        $splitMessage | ForEach-Object -process {
-                            $currentLine = $_ 
-                        
-                            Write-Debug "LINE - >$currentLine<"
+                        foreach($line in $splitMessage) {
+                            Write-Debug "LINE - >$line<"
 
-                            if(!([string]::IsNullOrEmpty($currentLine)) -AND !([string]::IsNullOrWhiteSpace($currentLine))) {
+                            if(!([string]::IsNullOrEmpty($line)) -AND !([string]::IsNullOrWhiteSpace($line))) {
                                 $countOfSpacesFromStart = $null
-                                $countOfSpacesFromStart = $currentLine.Length - $currentLine.TrimStart(' ').Length
+                                $countOfSpacesFromStart = $line.Length - $line.TrimStart(' ').Length
                     
                                 Write-Debug "Count of Spaces from Start : $countOfSpacesFromStart"
 
-                                if($lowestCountOfSpaces -eq 0) {
-                                    $lowestCountOfSpaces = $countOfSpacesFromStart
-                                } elseif($lowestCountOfSpaces -gt $countOfSpacesFromStart -AND $countOfSpacesFromStart -gt 0) {
+                                if($lowestCountOfSpaces -gt $countOfSpacesFromStart){
                                     $lowestCountOfSpaces = $countOfSpacesFromStart
                                 }
-                                #>
 
                                 Write-Debug "Lowest Count of spaces : $lowestCountOfSpaces"
                             }
-                    
                         }
                         Write-Debug "Final lowest count of spaces : $lowestCountOfSpaces"
                     #endregion
 
                     #region remove empty spaces from left side , count is determined by the previous step
-                        $finalMessage += "{0} <:> {1} <:> {2}" -f $currentTime, $Level , $indentString # first line empty
-                        $lineLength = $finalMessage.Length # length of the first line, without any message
+                        [void]$finalMessage.AppendLine(("{0} <:> {1} <:> {2}" -f $currentTime, $Level , $indentString))# first line empty
 
-                        $splitMessage| ForEach-Object -process {
-        
-                            $currentLine = $_
-                            $messageFirstStage = $null
+                        $lineLength = $finalMessage.ToString().Length # length of the first line, without any message
 
-                            if(!([string]::IsNullOrEmpty($currentLine)) -AND !([string]::IsNullOrWhiteSpace($currentLine))) {
-                                $messageFirstStage+= ($currentLine.Substring($lowestCountOfSpaces)).TrimEnd([environment]::NewLine)
+                        foreach($line in $splitMessage) {
+                            $messageFirstStage = New-Object System.Text.StringBuilder
+
+                            if(!([string]::IsNullOrEmpty($line)) -AND !([string]::IsNullOrWhiteSpace($line))) { # if the line is not empty/ just spaces
+                                [void]$messageFirstStage.AppendLine((($line.Substring($lowestCountOfSpaces)).TrimEnd([environment]::NewLine))) # remove empty spaces from the start and remove newline from the end 
                             }
                             else {
-                                $messageFirstStage += $currentLine
+                                [void]$messageFirstStage.AppendLine($line)
                             }
-
-                            $messageSecondStage = "{0}{1}" -f (' ' * $lineLength) , $messageFirstStage
-                            $finalMessage += "{0}{1}" -f [environment]::NewLine , $messageSecondStage
+                            [void]$finalMessage.AppendLine(("{0}{1}" -f (' ' * $lineLength) , ($messageFirstStage.ToString()))) # add extra empty spaces to match the lengt of the message line
                         }
                     #endregion
                 } else {
-                    $finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString , $actuallMessage
+                    [void]$finalMessage.AppendLine(("{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString , $actuallMessage)) # one line input, so just build message
                 }
             #endregion
-
 
         #region output
             #region console
@@ -500,22 +519,22 @@ function Write-ZLog
                     switch ($Level)
                     {
                         'WARNING' {
-                            Write-Host -Object $finalMessage -ForegroundColor Yellow
+                            Write-Host -Object $finalMessage.ToString() -ForegroundColor Yellow
                             break
                         }
 
                         'ERROR' {
-                            Write-Host -Object $finalMessage -ForegroundColor Red
+                            Write-Host -Object $finalMessage.ToString() -ForegroundColor Red
                             break
                         }
 
                         'DEBUG' {
-                            Write-Host -Object $finalMessage -ForegroundColor Cyan
+                            Write-Host -Object $finalMessage.ToString() -ForegroundColor Cyan
                             break
                         }
 
                         DEFAULT {
-                            Write-Host -Object $finalMessage
+                            Write-Host -Object $finalMessage.ToString()
                         }
                     }
                 }
@@ -524,7 +543,7 @@ function Write-ZLog
             #region file
                 if($logToFile -eq $true) {
                     try {
-                        $finalMessage | Out-File -LiteralPath $LiterallPath -Append -force # out-file does not block file for reading    
+                        $finalMessage.ToString() | Out-File -LiteralPath $LiterallPath -Append -force # out-file does not block file for reading    
                     }
                     catch {
                         Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to write log message to file' -Throw
@@ -532,51 +551,59 @@ function Write-ZLog
                     
                 }
             #endregion
+
+            #region pipeline
+
+                if ($logToPipeline -eq $true) {
+                    Write-Output -InputObject $finalMessage.ToString()
+                }
+
+            #endregion
         #endregion
     }
 }
 
 <#
-.Synopsis
-   Update exception object
-.DESCRIPTION
-   Set's ErrorDetails exception property to desired message
-.PARAMETER Exception
-    Exception object that will be modified
-.PARAMETER ErrorDetailMessage
-    Custom message that will be assigned to errordetails property of Exception object
-.PARAMETER Throw
-    Specifies if function should in the end throw the exception.
-    If not used ,function writes modified exception object to pipeline.
-.EXAMPLE
-    try {
-        get-childitem HKLM:/ -ErrorAction stop
-    }
-    catch {
-        $ex = Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to list HKLM:\'
-        throw $ex
-    }
+    .Synopsis
+    Update exception object
+    .DESCRIPTION
+    Set's ErrorDetails exception property to desired message
+    .PARAMETER Exception
+        Exception object that will be modified
+    .PARAMETER ErrorDetailMessage
+        Custom message that will be assigned to errordetails property of Exception object
+    .PARAMETER Throw
+        Specifies if function should in the end throw the exception.
+        If not used ,function writes modified exception object to pipeline.
+    .EXAMPLE
+        try {
+            get-childitem HKLM:/ -ErrorAction stop
+        }
+        catch {
+            $ex = Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to list HKLM:\'
+            throw $ex
+        }
 
-    writeErrorStream      : True
-    PSMessageDetails      : 
-    Exception             : System.Security.SecurityException: Požadovaný přístup k registru není povolen.
-                            v System.ThrowHelper.ThrowSecurityException(ExceptionResource resource)
-                            v Microsoft.Win32.RegistryKey.OpenSubKey(String name, Boolean writable)
-                            v Microsoft.PowerShell.Commands.RegistryWrapper.OpenSubKey(String name, Boolean writable)
-                            v Microsoft.PowerShell.Commands.RegistryProvider.GetRegkeyForPath(String path, Boolean writeAccess)
-                            v Microsoft.PowerShell.Commands.RegistryProvider.GetChildItems(String path, Boolean recurse, UInt32 depth)
-                            Zóna sestavení, u něhož došlo k chybě:
-                            MyComputer
-    TargetObject          : HKEY_LOCAL_MACHINE\BCD00000000
-    CategoryInfo          : PermissionDenied: (HKEY_LOCAL_MACHINE\BCD00000000:String) [Get-ChildItem], SecurityException
-    FullyQualifiedErrorId : System.Security.SecurityException,Microsoft.PowerShell.Commands.GetChildItemCommand
-    ErrorDetails          : Failed to list HKLM:\
-    InvocationInfo        : System.Management.Automation.InvocationInfo
-    ScriptStackTrace      : at <ScriptBlock>, C:\temp\testickky.ps1: line 38
-    PipelineIterationInfo : {}
+        writeErrorStream      : True
+        PSMessageDetails      : 
+        Exception             : System.Security.SecurityException: Požadovaný přístup k registru není povolen.
+                                v System.ThrowHelper.ThrowSecurityException(ExceptionResource resource)
+                                v Microsoft.Win32.RegistryKey.OpenSubKey(String name, Boolean writable)
+                                v Microsoft.PowerShell.Commands.RegistryWrapper.OpenSubKey(String name, Boolean writable)
+                                v Microsoft.PowerShell.Commands.RegistryProvider.GetRegkeyForPath(String path, Boolean writeAccess)
+                                v Microsoft.PowerShell.Commands.RegistryProvider.GetChildItems(String path, Boolean recurse, UInt32 depth)
+                                Zóna sestavení, u něhož došlo k chybě:
+                                MyComputer
+        TargetObject          : HKEY_LOCAL_MACHINE\BCD00000000
+        CategoryInfo          : PermissionDenied: (HKEY_LOCAL_MACHINE\BCD00000000:String) [Get-ChildItem], SecurityException
+        FullyQualifiedErrorId : System.Security.SecurityException,Microsoft.PowerShell.Commands.GetChildItemCommand
+        ErrorDetails          : Failed to list HKLM:\
+        InvocationInfo        : System.Management.Automation.InvocationInfo
+        ScriptStackTrace      : at <ScriptBlock>, C:\temp\testickky.ps1: line 38
+        PipelineIterationInfo : {}
 
-    In this example function modifies Exception with custom message  'Failed to list HKLM:\' while preserving original exception as can be seen
-    in the output dump.
+        In this example function modifies Exception with custom message  'Failed to list HKLM:\' while preserving original exception as can be seen
+        in the output dump.
 #>
 function Update-Exception
 {
@@ -586,7 +613,7 @@ function Update-Exception
     (
         # Exception object
         [Parameter(Mandatory=$true,
-                   ValueFromPipelineByPropertyName=$true,
+                   ValueFromPipeline = $true,
                    Position=0)]
         [System.Management.Automation.ErrorRecord]
         $Exception,
