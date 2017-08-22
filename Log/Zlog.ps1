@@ -495,19 +495,21 @@ function Write-ZLog
                         $lineLength = $finalMessage.ToString().Length # length of the first line, without any message
 
                         foreach($line in $splitMessage) {
-                            $messageFirstStage = New-Object System.Text.StringBuilder
-
-                            if(!([string]::IsNullOrEmpty($line)) -AND !([string]::IsNullOrWhiteSpace($line))) { # if the line is not empty/ just spaces
-                                [void]$messageFirstStage.AppendLine((($line.Substring($lowestCountOfSpaces)).TrimEnd([environment]::NewLine))) # remove empty spaces from the start and remove newline from the end 
+                            if(!([string]::IsNullOrEmpty($line)) -AND !([string]::IsNullOrWhiteSpace($line))) { # if the line is not empty/ just spaces        
+                                
+                                $line = $line.Substring($lowestCountOfSpaces)
+                                $line = ("{0}{1}" -f $emptyspaces , $line)
+                                $line = $line.TrimEnd([environment]::NewLine)
+                        
+                                [void]$finalMessage.AppendLine($line) # add extra empty spaces to match the lengt of the message line
                             }
                             else {
-                                [void]$messageFirstStage.AppendLine($line)
+                                [void]$finalMessage.AppendLine($line) # add extra empty spaces to match the lengt of the message line
                             }
-                            [void]$finalMessage.AppendLine(("{0}{1}" -f (' ' * $lineLength) , ($messageFirstStage.ToString()))) # add extra empty spaces to match the lengt of the message line
                         }
                     #endregion
                 } else {
-                    [void]$finalMessage.AppendLine(("{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString , $actuallMessage)) # one line input, so just build message
+                    [void]$finalMessage.Append(("{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString , $actuallMessage)) # one line input, so just build message
                 }
             #endregion
 
