@@ -412,12 +412,12 @@ function Write-ZLog
                         }
 
                         {$_ -is [hashtable]} {
-                            $actuallMessage = $Message | Format-Table | Out-String -Width 4096
+                            $actuallMessage = $Message | Format-Table -Wrap | Out-String -Width 4096
                             break
                         }
 
                         {$_ -is [System.Management.Automation.PSCustomObject]} {
-                            $actuallMessage = $Message | Format-Table | Out-String -Width 4096
+                            $actuallMessage = $Message | Format-Table -Wrap | Out-String -Width 4096
                             break
                         }
 
@@ -491,14 +491,13 @@ function Write-ZLog
 
                     #region remove empty spaces from left side , count is determined by the previous step
                         [void]$finalMessage.AppendLine(("{0} <:> {1} <:> {2}" -f $currentTime, $Level , $indentString))# first line empty
-
-                        $lineLength = $finalMessage.ToString().Length # length of the first line, without any message
+                        $lineLength = $finalMessage.Length
 
                         foreach($line in $splitMessage) {
                             if(!([string]::IsNullOrEmpty($line)) -AND !([string]::IsNullOrWhiteSpace($line))) { # if the line is not empty/ just spaces        
                                 
                                 $line = $line.Substring($lowestCountOfSpaces)
-                                $line = ("{0}{1}" -f $emptyspaces , $line)
+                                $line = ("{0}{1}" -f (' ' * $lineLength ) , $line)
                                 $line = $line.TrimEnd([environment]::NewLine)
                         
                                 [void]$finalMessage.AppendLine($line) # add extra empty spaces to match the lengt of the message line
