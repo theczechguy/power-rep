@@ -637,3 +637,57 @@ function Update-Exception
         }
     }
 }
+
+function Log-Exception {
+    param(
+        # exception object
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [System.Management.Automation.ErrorRecord]
+        $Exception,
+
+        # additional custom message
+        [Parameter(Mandatory = $false)]
+        [string]
+        $CustomMessage,
+
+        # After logging the exception throw exception
+        [Parameter(Mandatory = $false)]
+        [switch]
+        $Throw
+    )
+    BEGIN{
+        Write-ZLog -Message "!!!!!!!!-EXCEPTION-!!!!!!!!" -Level ERROR
+        Write-ZLog -Message "!!!!!!!!!!!!!!!!!!!!!!!!!!!" -Level ERROR -Indent IncreaseDelayed
+    }
+    PROCESS{       
+        if ($PSBoundParameters.Keys.Contains('CustomMessage')) {
+            Write-ZLog -Message "Custom message : $CustomMessage" -Level ERROR
+        }
+
+        Write-ZLog -Message "MESSAGE : $($Exception.Exception.Message)" -Level ERROR
+        Write-ZLog -Message "ERROR DETAILS : $($Exception.ErrorDetails)" -Level ERROR
+        Write-ZLog -Message "POSITION MESSAGE : $($Exception.InvocationInfo.PositionMessage)" -Level ERROR
+        Write-ZLog -Message "SCRIPT STACK TRACE : $($Exception.ScriptStackTrace)" -Level ERROR
+        Write-ZLog -Message "CATEGORY INFO : $($Exception.CategoryInfo.ToString())" -Level ERROR
+        Write-ZLog -Message "TARGET OBJECT : $($Exception.TargetObject)" -Level ERROR
+        Write-ZLog -Message "HRESULT : $($Exception.Exception.HResult)" -Level ERROR
+
+        $ExceptionObject = $Exception.Exception
+        $originalIndent = $Global:ZLogIndent # store original indent level so it can be set back after iterating through inner exceptions 
+        while ($ExceptionObject.InnerException -ne $null) {
+            Write-ZLog -Message "TARGET SITE : $($ExceptionObject.InnerException.TargetSite)" -Level ERROR -Indent Increase
+            Write-ZLog -Message "MESSAGE : $($ExceptionObject.InnerException.Message)" -Level ERROR
+            $ExceptionObject = $ExceptionObject.InnerException
+        }
+        $Global:ZLogIndent = $originalIndent
+
+        if ($Throw.IsPresent) {
+            throw $Exception
+        }
+    }
+    END{
+        Write-ZLog -Message "!!!!!!!!!!!!!!!!!!!!!!!!!!!" -Level ERROR -Indent Decrease
+        Write-ZLog -Message "!!!!!!!!-EXCEPTION-!!!!!!!!" -Level ERROR
+    }
+}
