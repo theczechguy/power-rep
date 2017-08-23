@@ -336,7 +336,6 @@ function Write-ZLog
         #region log target
             
             # log to file ?
-
             if($SupressFileOutput.IsPresent) {
                 Write-Verbose -Message "Logfile output is supressed !"
             } elseif([string]::IsNullOrEmpty($LiterallPath)) {
@@ -355,6 +354,7 @@ function Write-ZLog
                 $logToConsole = $true
             }
 
+            # send log message to pipeline ?
             if ($PassThrough.IsPresent) {
                 Write-Verbose -Message 'Message will be sent to pipeline'
                 $logToPipeline = $true
@@ -482,7 +482,6 @@ function Write-ZLog
                                 if($lowestCountOfSpaces -gt $countOfSpacesFromStart){
                                     $lowestCountOfSpaces = $countOfSpacesFromStart
                                 }
-
                                 Write-Debug "Lowest Count of spaces : $lowestCountOfSpaces"
                             }
                         }
@@ -490,7 +489,6 @@ function Write-ZLog
                     #endregion
 
                     #region remove empty spaces from left side , count is determined by the previous step
-                        
                         $firstLineString = ("{0} <:> {1} <:> {2}" -f $currentTime, $Level , $indentString)
                         $firstLineProcessed = $false
                         $lineLength = $firstLineString.Length
@@ -511,8 +509,6 @@ function Write-ZLog
 
                                     [void]$finalMessage.AppendLine($line) # add extra empty spaces to match the lengt of the message line
                                 }
-                        
-                                
                             }
                             else {
                                 if ($firstLineProcessed -eq $false) {
