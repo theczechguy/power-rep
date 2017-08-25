@@ -60,7 +60,7 @@ function New-ZlogConfiguration
     )
     Process
     {
-        Set-StrictMode -Version latest
+        #Set-StrictMode -Version latest
         $ErrorActionPreference = 'stop'
 
         #region variable declaration
@@ -214,6 +214,42 @@ function New-ZlogConfiguration
     }
 }
 
+<#
+    .SYNOPSIS
+    Function for advanced logging.
+
+    .PARAMETER Message
+    Message to be logged
+
+    .PARAMETER LogFunction
+    Used to log function start and end.
+    Accepts two possible inputs - Start / End
+
+    .PARAMETER DebugOptions
+    Offers easy logging of usefull informations about evnrionments. 
+    For example dump of all global variables , etc.
+
+    .PARAMETER Level
+    Level of message - INFO, WARNING , etc.
+
+    .PARAMETER LiterallPath
+    Literall path to the log file
+
+    .PARAMETER Indent
+    Allows to create 'tree' structure inside of your logs by indenting to the right side and back.
+
+    .PARAMETER SupressConsoleOutput
+    Do not display log message in the host console.
+
+    .PARAMETER SupressFileOutput
+    Do not write log message to the file.
+
+    .PARAMETER Timezone
+    Specifies if time should be local or UTC
+
+    .PARAMETER PassThrough
+    If used, function in the end sends the log message to the pipeline.
+#>
 function Write-ZLog
 {
     [CmdletBinding(DefaultParameterSetName = 'message')]
@@ -251,7 +287,7 @@ function Write-ZLog
         
         [Parameter(Mandatory = $false)]
         [string]
-        $LiterallPath = $Global:ZLogLogFullPath,
+        $LiterallPath,
 
         [Parameter(Mandatory = $false)]
         [ValidateSet('Increase','Decrease','IncreaseDelayed','DecreaseDelayed','Reset')]
@@ -280,13 +316,19 @@ function Write-ZLog
         [switch]
         $PassThrough
     )
-    Begin{
+    Begin {
 
         #region Message indent
             $localIndent = 0
 
             if($Global:ZLogIndent -eq $null) {
                 $Global:ZLogIndent = 0
+            }
+
+            if ($Global:ZLogLogFullPath -eq $null) {
+                $LiterallPath = [string]::Empty
+            } else {
+                $LiterallPath = $Global:ZLogLogFullPath
             }
 
             switch ($Indent) {
@@ -374,7 +416,6 @@ function Write-ZLog
                 $finalMessage = $null
                 $currentTime = $null
 
-
                 if ($PSBoundParameters.Keys.Contains('Timezone')) {
                     $timeDecision = $Timezone
                 } else {
@@ -396,11 +437,6 @@ function Write-ZLog
 
             #region parameterset message
                 if ($PSCmdlet.ParameterSetName -eq 'message') {
-
-                    if ($Global:ZLogEnableDebugMessages -eq $false -and $Level -eq 'DEBUG') {
-                        Write-Verbose 'DEBUG level messages are disabled'
-                        continue
-                    }
                     
                     Write-debug "Datatype of current message : $($Message.GetType())"
                     Write-debug "Converting to string"
@@ -412,12 +448,12 @@ function Write-ZLog
                         }
 
                         {$_ -is [hashtable]} {
-                            $actuallMessage = $Message | Format-Table -Wrap | Out-String -Width 4096
+                            $actuallMessage = $Message | Format-Table -AutoSize | Out-String -Width 4096
                             break
                         }
 
                         {$_ -is [System.Management.Automation.PSCustomObject]} {
-                            $actuallMessage = $Message | Format-Table -Wrap | Out-String -Width 4096
+                            $actuallMessage = $Message | Format-Table -AutoSize | Out-String -Width 4096
                             break
                         }
 
@@ -430,16 +466,20 @@ function Write-ZLog
 
             #region parameterset function
                 if ($PSCmdlet.ParameterSetName -eq 'function') {
-                    
-                    $callStack = Get-PSCallStack
-                    Write-Debug -Message "Callstack count : $($callStack.count)"
-                    if ($callStack.count -ge 1) {
-                        $callStack = $callStack[1]
-                    }
 
-                    $actuallMessage = " <~~~~> {0} function : {1} <~~~~>" -f $LogFunction , $callStack.Command
-                    $actuallMessage = $actuallMessage.Trim()
-                    #$finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString, $mesage
+                    switch ($LogFunction) {
+                        {$_ -eq 'Start' -or $_ -eq 'End'}{
+                            $callStack = Get-PSCallStack
+                            Write-Debug -Message "Callstack count : $($callStack.count)"
+                            if ($callStack.count -ge 1) {
+                                $callStack = $callStack[1]
+                            }
+        
+                            $actuallMessage = " <~~~~> {0} function : {1} <~~~~>" -f $LogFunction , $callStack.Command
+                            $actuallMessage = $actuallMessage.Trim()
+                        }
+                    }
+                    
                 }
             #endregion
 
@@ -462,6 +502,12 @@ function Write-ZLog
             #endregion
 
             #region process message
+
+                if ($Global:ZLogEnableDebugMessages -eq $false -and $Level -eq 'DEBUG') {
+                    Write-Verbose 'DEBUG level messages are disabled'
+                    continue
+                }
+
                 $splitMessage = $actuallMessage -split([environment]::NewLine) # split message by lines
                 $finalMessage = New-Object System.Text.StringBuilder
 
@@ -541,7 +587,7 @@ function Write-ZLog
                         }
 
                         'DEBUG' {
-                            Write-Host -Object $finalMessage.ToString() -ForegroundColor Magenta -BackgroundColor Black
+                            Write-Host -Object $finalMessage.ToString() -ForegroundColor Magenta
                             break
                         }
 
@@ -638,6 +684,9 @@ function Update-Exception
         [switch]
         $Throw
     )
+    BEGIN{
+        Write-ZLog -LogFunction Start -Level DEBUG
+    }
     Process {
         $Exception.errordetails = $ErrorDetailMessage
 
@@ -649,8 +698,40 @@ function Update-Exception
             Write-Output $Exception
         }
     }
+    END{
+        Write-ZLog -LogFunction End -Level DEBUG
+    }
 }
 
+<#
+    .SYNOPSIS
+    Log exception properties using write-zlog
+
+    .DESCRIPTION
+    Function accepts already existing Exception object as an input and logs , using write-zlog function , all important properties.
+
+    .PARAMETER Exception
+    Exception object
+
+    .PARAMETER CustomMessage
+    Custom message can be added to the log using this parameter.
+
+    .PARAMETER Throw
+    Specifies if function should in the end throw the exception.
+    If not used there is no output to pipeline, the only output is the output from write-zlog
+
+    .EXAMPLE
+        In this example exception is first updated with custom message by using Update-Exception function and modified exception is then passed
+        via pipeline to Log-Exception function which will log all important properties if the exception.
+        Parameter -Throw is specified therefore after the exception is logged the function will throw the exception.
+
+            try {
+                get-childitem HKLM:/ -ErrorAction stop
+            }
+            catch {
+                Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to list HKLM:\' | Log-Exception -Throw
+            }
+#>
 function Log-Exception {
     param(
         # exception object
@@ -670,8 +751,10 @@ function Log-Exception {
         $Throw
     )
     BEGIN{
+        Write-ZLog -LogFunction Start -Level DEBUG -Indent IncreaseDelayed
+
         Write-ZLog -Message "!!!!!!!!-EXCEPTION-!!!!!!!!" -Level ERROR
-        Write-ZLog -Message "!!!!!!!!!!!!!!!!!!!!!!!!!!!" -Level ERROR -Indent IncreaseDelayed
+        Write-ZLog -Message "!!!!!!!!!!!!!!!!!!!!!!!!!!!" -Level ERROR
     }
     PROCESS{       
         if ($PSBoundParameters.Keys.Contains('CustomMessage')) {
@@ -688,19 +771,382 @@ function Log-Exception {
 
         $ExceptionObject = $Exception.Exception
         $originalIndent = $Global:ZLogIndent # store original indent level so it can be set back after iterating through inner exceptions 
-        while ($ExceptionObject.InnerException -ne $null) {
-            Write-ZLog -Message "TARGET SITE : $($ExceptionObject.InnerException.TargetSite)" -Level ERROR -Indent Increase
-            Write-ZLog -Message "MESSAGE : $($ExceptionObject.InnerException.Message)" -Level ERROR
-            $ExceptionObject = $ExceptionObject.InnerException
+        if ($ExceptionObject.InnerException -ne $null) {
+            Write-ZLog -Message "INNER EXCEPTION" -Level ERROR
+
+            while ($ExceptionObject.InnerException -ne $null) {
+                Write-ZLog -Message "TARGET SITE : $($ExceptionObject.InnerException.TargetSite)" -Level ERROR -Indent Increase
+                Write-ZLog -Message "MESSAGE : $($ExceptionObject.InnerException.Message)" -Level ERROR
+                $ExceptionObject = $ExceptionObject.InnerException
+            }
         }
         $Global:ZLogIndent = $originalIndent
+    }
+    END{
+        Write-ZLog -Message "!!!!!!!!!!!!!!!!!!!!!!!!!!!" -Level ERROR -Indent Decrease
+        Write-ZLog -Message "!!!!!!!!-EXCEPTION-!!!!!!!!" -Level ERROR
+
+        Write-ZLog -LogFunction End -Level DEBUG -Indent Decrease
 
         if ($Throw.IsPresent) {
             throw $Exception
         }
     }
+}
+
+# Select from database
+function Invoke-SqlQuery {
+	[Cmdletbinding()]
+	[outputtype([hashtable])]
+    param(
+
+        # sql query to be executed
+        [Parameter(Mandatory = $true ,ParameterSetName = 'query')]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $Query,
+
+        # sql query to be executed
+        [Parameter(Mandatory = $true, ParameterSetName = 'procedure')]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $StoredProcedureName,
+
+        # parameters for stored procedure if any required
+        [Parameter(Mandatory = $false)]
+        [ValidateNotNullOrEmpty()]
+        [hashtable]
+        $Parameters,
+
+        # sql server instance
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $ServerInstance,
+
+        # failover partner ,if any
+        [Parameter(Mandatory = $false)]
+        [ValidateNotNull()]
+        [string]
+        $FailoverInstance,
+
+        # DB name / initial catalog
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $Database,
+
+        # query execution timeout
+        [Parameter(Mandatory = $false)]
+        [ValidateScript({($_ -gt 0 -AND $_ -lt 65535)})]
+        [int]
+        $QueryTimeout = 60,
+
+        # how long to wait for connection to be established
+        [Parameter(Mandatory = $false)]
+        [ValidateScript({$_ -gt 0 -AND $_ -lt 120})]
+        [int]
+        $ConnectionTimeout = 10
+    )
+    BEGIN {
+
+        Write-ZLog -LogFunction Start -Level DEBUG -Indent IncreaseDelayed
+        Log-BoundParameters -Parameters $PSBoundParameters
+
+        #region initialization
+            $ErrorActionPreference = 'stop'
+        #endregion
+
+        #region connection string
+            $sqlConnectionStringBuilder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+
+            $sqlConnectionStringBuilder.'Integrated Security' = $true
+            $sqlConnectionStringBuilder.'Data Source' = $ServerInstance
+            $sqlConnectionStringBuilder.'Initial Catalog' = $Database
+            $sqlConnectionStringBuilder.'Connect Timeout' = $ConnectionTimeout
+
+            if ($PSCmdlet.MyInvocation.BoundParameters.ContainsKey('FailoverInstance')) {
+                $sqlConnectionStringBuilder.'Failover Partner' = $FailoverInstance
+            }
+
+            Write-ZLog -Message "Connection string :  $($sqlConnectionStringBuilder.ConnectionString)" -Level DEBUG
+
+        #endregion
+
+        #region sql connection
+            $sqlConnection = New-Object System.Data.SqlClient.SqlConnection
+            $sqlConnection.ConnectionString = $sqlConnectionStringBuilder.ConnectionString
+
+			if ($DebugPreference -ne 'silentlycontinue') {
+				$connectionOpenStart = get-date	
+			}
+
+            Write-ZLog -Message 'Opening connection to DB' -Level DEBUG
+
+            try {
+                $sqlConnection.Open()
+            }
+            catch {
+                Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to open connection to DB' | Log-Exception -Throw
+            }
+            finally {
+                Write-ZLog -Message 'Connection to DB opened' -Level DEBUG
+            }
+        #endregion
+    }
+    PROCESS {
+        #region var declaration
+            $sqlCommand = $null
+            $outputHashtable = @{'HasData' = $null ; 'Data' = $null ; 'RecordsCount' = $null}
+        #endregion
+
+        #region prepare for exec
+            # if stored procedure is executed
+            if ($PSCmdlet.ParameterSetName -eq 'procedure') {
+                Write-ZLog -Message "Stored Procedure : $StoredProcedureName" -Level DEBUG
+                $sqlCommand = New-Object System.Data.SqlClient.SqlCommand($StoredProcedureName , $sqlConnection)
+                $sqlCommand.CommandType = [System.Data.CommandType]::StoredProcedure
+
+            } else {
+                Write-ZLog -Message "Query : $Query" -Level DEBUG
+                $sqlCommand = New-Object System.Data.SqlClient.SqlCommand($Query , $sqlConnection)
+			}
+			
+			if ($PSBoundParameters.ContainsKey('Parameters')) {
+				foreach ($parameterKey in $Parameters.Keys) {
+                    $parameterKey = $parameterKey.TrimStart('@')
+
+                    Write-ZLog -Message "Parameter Name  : $parameterKey" -Level DEBUG
+                    Write-ZLog -Message "Parameter Value : $($Parameters[$parameterKey])" -Level DEBUG
+
+					$sqlCommand.Parameters.AddWithValue("@$parameterKey",[string]$Parameters[$parameterKey]).Direction =
+					[System.Data.ParameterDirection]::Input
+				}                
+			}
+            
+            $sqlCommand.CommandTimeout = $QueryTimeout # seconds, input from parameter
+
+            $dataSet = New-Object System.Data.DataSet
+            $dataAdapter = New-Object System.Data.SqlClient.SqlDataAdapter($sqlCommand)
+        #endregion
+
+        #region execute
+            Write-ZLog -Message 'Executing query' -Level DEBUG
+            try {
+                [void]$dataAdapter.Fill($dataSet)        
+            }
+            catch {
+                Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to retrieve data' | Log-Exception -Throw
+            }
+            finally {
+                if($sqlConnection -ne $null -AND $sqlConnection.State -ne [System.Data.ConnectionState]::Closed) {
+                    Write-ZLog -Message 'DB connection is opened , closing' -Level DEBUG
+                    $sqlConnection.Dispose()
+                }
+            }
+            Write-ZLog -Message 'Execution completed' -Level DEBUG
+        #endregion
+
+        #region generate output
+            if($dataset.Tables.Count -gt 0) {
+                if([string]::IsNullOrEmpty($dataSet.Tables[0])) {
+                    Write-ZLog -Message "Sql query returned empty result" -Level DEBUG
+                    $outputHashtable.HasData = $false
+                } else {
+                    $outputHashtable.HasData = $true
+                    $outputHashtable.Data = $dataSet.Tables[0]
+                    $outputHashtable.RecordsCount = $dataSet.Tables[0].Rows.Count
+                }
+            } else {
+                Write-ZLog -Message "No data received from query" -Level DEBUG
+                $outputHashtable.HasData = $false
+            }
+
+            Write-Output $outputHashtable
+        #endregion
+    }
     END{
-        Write-ZLog -Message "!!!!!!!!!!!!!!!!!!!!!!!!!!!" -Level ERROR -Indent Decrease
-        Write-ZLog -Message "!!!!!!!!-EXCEPTION-!!!!!!!!" -Level ERROR
+        Write-ZLog -LogFunction End -Indent Decrease -Level DEBUG
+    }
+}
+
+function Invoke-SqlUpdate {
+	[Cmdletbinding()]
+	[Outputtype([bool])]
+    param(
+        # sql query to be executed
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $Query,
+
+        # parameters for stored procedure if any required
+        [Parameter(Mandatory = $false)]
+        [ValidateNotNullOrEmpty()]
+        [hashtable]
+        $Parameters,
+
+        # sql server instance
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $ServerInstance,
+
+        # failover partner ,if any
+        [Parameter(Mandatory = $false)]
+        [ValidateNotNull()]
+        [string]
+        $FailoverInstance,
+
+        # DB name / initial catalog
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $Database,
+
+        # query execution timeout
+        [Parameter(Mandatory = $false)]
+        [ValidateScript({($_ -gt 0 -AND $_ -lt 65535)})]
+        [int]
+        $QueryTimeout = 60,
+
+        # how long to wait for connection to be established
+        [Parameter(Mandatory = $false)]
+        [ValidateScript({$_ -gt 0 -AND $_ -lt 120})]
+        [int]
+        $ConnectionTimeout = 10,
+
+        # force execution without transaction
+        [Parameter(Mandatory = $false)]
+        [switch]
+        $NoTransaction
+
+    )
+    BEGIN {
+
+        #region initialization
+            $ErrorActionPreference = 'stop'
+            Set-StrictMode -Version latest
+        #endregion
+
+        #region connection string
+            $sqlConnectionStringBuilder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+
+            $sqlConnectionStringBuilder.'Integrated Security' = $true
+            $sqlConnectionStringBuilder.'Data Source' = $ServerInstance
+            $sqlConnectionStringBuilder.'Initial Catalog' = $Database
+            $sqlConnectionStringBuilder.'Connect Timeout' = $ConnectionTimeout
+
+            if ($PSCmdlet.MyInvocation.BoundParameters.ContainsKey('FailoverInstance')) {
+                $sqlConnectionStringBuilder.'Failover Partner' = $FailoverInstance
+            }
+
+            Write-ZLog -Message "Connection string :  $($sqlConnectionStringBuilder.ConnectionString)" -Level DEBUG
+
+        #endregion
+
+        #region sql connection
+            $sqlConnection = New-Object System.Data.SqlClient.SqlConnection
+            $sqlConnection.ConnectionString = $sqlConnectionStringBuilder.ConnectionString
+
+			if ($DebugPreference -ne 'silentlycontinue') {
+				$connectionOpenStart = get-date	
+            }
+            Write-ZLog -Message 'Opening connection to DB' -Level DEBUG
+            try {
+                $sqlConnection.Open()
+            }
+            catch {
+                Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to open connection to DB' | Log-Exception -Throw
+            }
+            finally {
+				Write-ZLog -Message 'Connection to DB opened' -Level DEBUG
+            }
+        #endregion
+    }
+    PROCESS {
+        #region var declaration
+            $sqlCommand = $null
+            $result = $false
+        #endregion
+
+        #region prepare for exec
+
+            Write-ZLog -Message "Command : $Query" -Level DEBUG
+
+            if(!$NoTransaction.IsPresent){
+                Write-ZLog -Message 'Transaction created' -Level DEBUG
+                $sqlTransaction = $sqlConnection.BeginTransaction()
+            }
+            
+            $sqlCommand = New-Object System.Data.SqlClient.SqlCommand($Query , $sqlConnection)
+            $sqlCommand.CommandTimeout = $QueryTimeout # seconds, input from parameter
+
+            if(!$NoTransaction.IsPresent){
+                $sqlCommand.Transaction = $sqlTransaction
+            }
+
+            # parameters
+            if($PSBoundParameters.ContainsKey('Parameters')) {
+                foreach ($parameterKey in $Parameters.Keys) {
+                            $parameterKey = $parameterKey.TrimStart('@')
+                            Write-ZLog -Message "Parameter Name  : $parameterKey" -Level DEBUG
+                            Write-ZLog -Message "Parameter Value : $($Parameters[$parameterKey])" -Level DEBUG
+                            $sqlCommand.Parameters.AddWithValue("@$parameterKey",[string]$Parameters[$parameterKey]).Direction =
+                            [System.Data.ParameterDirection]::Input
+                        }
+            }
+        #endregion
+
+        #region execute
+            Write-ZLog -Message 'Executing command' -Level DEBUG
+            try {
+                $rowsAffected = $sqlCommand.ExecuteNonQuery()
+                Write-ZLog -Message "Number of affected rows : $rowsAffected" -Level DEBUG
+                $result = $true
+                
+                if (!$NoTransaction.IsPresent) {
+                    Write-ZLog -Message 'Commiting transaction' -Level DEBUG
+                    $sqlTransaction.Commit() # if execution was ok , commit transaction   
+                }
+            }
+            catch {
+                if (!$NoTransaction.IsPresent) {
+                    Write-ZLog -Message 'Rolling back transaction' -Level DEBUG
+                    $sqlTransaction.Rollback()
+
+                    Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to execute command' | Log-Exception -Throw
+                }
+            }
+            finally {
+                if($sqlConnection -ne $null -AND $sqlConnection.State -ne [System.Data.ConnectionState]::Closed) {
+                    Write-ZLog -Message 'Closing DB connection' -Level DEBUG
+                    $sqlConnection.Dispose()
+                }
+            }
+        #endregion
+
+        #region generate output
+            Write-Output $result
+        #endregion
+    }
+}
+
+function Log-BoundParameters {
+    [CmdletBinding()]
+    param(
+        # psboundparameters
+        [Parameter(Mandatory = $true)]
+        $Parameters
+    )
+    BEGIN{
+        Write-ZLog -LogFunction Start -Indent IncreaseDelayed -Level DEBUG
+        Write-ZLog -Message 'Parameters:' -Level DEBUG
+    }
+    PROCESS{
+        $Parameters | Format-Table -AutoSize | Out-String | Write-ZLog -Level DEBUG
+    }
+    END{
+        Write-ZLog -LogFunction End -Level DEBUG -Indent Decrease
     }
 }
