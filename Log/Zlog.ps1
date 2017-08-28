@@ -1,19 +1,14 @@
 function New-ZlogConfiguration
 {
     [CmdletBinding()]
-    [OutputType([string])]
-    Param
-    (
-        # Param1 help description
-        [Parameter(Mandatory=$true,
-                   Position=0)]
+    [OutputType([hashtable])]
+    Param (
+        [Parameter(Mandatory=$false)]
         [ValidateNotNullOrEmpty()]
         [string]
         $LogName,
 
-
-        [Parameter(Mandatory=$true,
-                   Position=1)]
+        [Parameter(Mandatory=$false)]
         [ValidateNotNullOrEmpty()]
         [string]
         $LiteralLogFolderPath,
@@ -24,7 +19,6 @@ function New-ZlogConfiguration
         [string]
         $LogNameExtension = 'log',
 
-        # Param2 help description
         [Parameter(Mandatory=$false)]
         [ValidateSet('NOTIME','FILETIME','STANDARD')]
         [string]
@@ -41,174 +35,147 @@ function New-ZlogConfiguration
 
         [Parameter(Mandatory = $false)]
         [int]
-        $LogRotationHours = 0,
-
-        # do not send log file path to pipeline
-        [Parameter(Mandatory = $false)]
-        [switch]
-        $SupressOutput,
-
-        [Parameter(Mandatory = $false)]
-        [switch]
-        $DoNotCreateFile,
+        $LogRotationHours = 1,
 
         # allow logging of debug level messages
         [Parameter(Mandatory = $false)]
         [switch]
-        $EnableDebug
-        
+        $EnableDebugMessages,
+
+        # do not send output hashtable to pipeline in the end
+        [Parameter(Mandatory = $false)]
+        [switch]
+        $SupressPipelineOutput
     )
     Process
     {
-        #Set-StrictMode -Version latest
         $ErrorActionPreference = 'stop'
 
         #region variable declaration
             $logRotationEnabled = $false
+            $useTimeInLogname = $null # true/false
+            $currentTime = $null
+            $fullLiteralPath = $null # full path of the logfile
         #endregion
 
-
-        #region test folder path
-            if(!(Test-Path -LiteralPath $LiteralLogFolderPath -ErrorAction SilentlyContinue)){
-                
-                Write-Verbose -Message "Some part of provided path does not exist : $LiteralLogFolderPath"
-
-                try {
-                    $LiteralLogFolderPath = New-Item -ItemType Directory -Path $LiteralLogFolderPath
-                }
-                catch {
-                    Update-Exception -Exception $_ -ErrorDetailMessage "Failed to create log folder : $LiteralLogFolderPath" -Throw
-                }
-            }
-        #endregion
-
-        #region analyze parameters
-            # loop through all used parameter names 
-            $MyInvocation.BoundParameters.Keys | Where-Object {$_ -notin('LogName','LiteralLogFolderPath')} | ForEach-Object -Process {
-
-                $currentParameter = $_
-                Write-Debug "PARAMETER ANALYSIS : found parameter -> $currentParameter"
-
-                switch ($currentParameter) {
-                    'TimeInLogname' {
-                        Write-Debug "PARAMETER ANALYSIS : TimeInLogname -> $TimeInLogname"
-                        break
-                    }
-
-                    'Timezone' {
-                        Write-Debug "PARAMETER ANALYSIS : Timezone -> $Timezone"
-                        $Global:ZLogTimeZone = $Timezone
-                        break
-                    }
-
-                    'LogRotationDays' {
-                        Write-Debug "PARAMETER ANALYSIS : LogRotationDays -> $LogRotationDays"
-                        Write-Verbose -Message "Log rotation enabled"
-                        $logRotationEnabled = $true
-                        $Global:ZLogRotationNDays = $LogRotationDays
-                        break
-                    }   
-                    
-                    'LogRotationHours' {
-                        write-debug "PARAMETER ANALYSIS : LogRotationHours -> $LogRotationHours"
-                        Write-Verbose -Message "Log rotation enabled"
-                        $logRotationEnabled = $true
-                        $Global:ZLogRotationNHours = $LogRotationHours
-                        break
-                    }
-
-                    'EnableDebug' {
-                        write-debug "PARAMETER ANALYSIS : EnableDebug -> True"
-                        Write-Verbose -Message 'Debug level messages enabled'
-                        $global:ZLogEnableDebugMessages = $true
-                    }                    
-                }
-            }
-        #endregion
-
-        #region build logfile name
-
-            #region timezone
-                switch ($Timezone) {
-                    'UTCTIME' { 
-                        $currentTime = (get-date).ToUniversalTime()
-                        break
-                    }
-                    'LOCALTIME' {
-                        $currentTime = get-date
-                    }
-                }
-            #endregion
-
-            #region time in log name
-                switch ($TimeInLogname) {
-                    'FILETIME' {
-                        $logNameTime = $currentTime.ToFileTime()
-                        $useTimeInLogname = $true
-                    }
-                    'STANDARD' {
-                        $logNameTime = $currentTime.ToString('yyyyMMdd_HH_mm_ss')
-                        $useTimeInLogname = $true
-                    }
-                    Default {
-                        Write-Verbose "Time will not be appended to log file name"
-                        $useTimeInLogname = $false
-                    }
-                }
-            #endregion
-
-            #region log name
-
-                if ($useTimeInLogname -eq $true) {
-                    if ($logRotationEnabled -eq $true) {
-
-                        # logname_time-rotationIdentifier <-- first log is starts with 0
-                        $customizedLogname = "{0}_{1}-0.{2}" -f $LogName, $logNameTime , $LogNameExtension
-                    } else {
-                        $customizedLogname = "{0}_{1}.{2}" -f $LogName , $logNameTime , $LogNameExtension
+        #region logfolder
+            if ($PSBoundParameters.Keys.Contains('LiteralLogFolderPath')) {
+                if ($PSBoundParameters.Keys.Contains('LogName')) {
+                    if(!(Test-Path -LiteralPath $LiteralLogFolderPath -ErrorAction SilentlyContinue)){                    
+                        Write-Verbose -Message "Some part of provided path does not exist : $LiteralLogFolderPath"
+    
+                        try {
+                            $LiteralLogFolderPath = New-Item -ItemType Directory -Path $LiteralLogFolderPath
+                        }
+                        catch {
+                            Update-Exception -Exception $_ -ErrorDetailMessage "Failed to create log folder : $LiteralLogFolderPath" -Throw
+                        }
                     }
                 } else {
-                    if ($logRotationEnabled -eq $true) {
-                        $customizedLogname = "{0}-0.{1}" -f $LogName , $LogNameExtension
-                    } else {
-                        $customizedLogname = "{0}.{1}" -f $LogName , $LogNameExtension
-                    }
+                    Write-Error -Message 'Missing LogName parameter' -RecommendedAction 'Use LogName and LiteralLogFolderPath parameters together.'
                 }
-
-            #endregion
-
-            try {
-                $fullLiteralPath = Join-Path -Path $LiteralLogFolderPath -ChildPath $customizedLogname    
-            }
-            catch {
-                Update-Exception -Exception $_ -ErrorDetailMessage 'Unable to combine logname with logpath' -Throw
             }
         #endregion
 
-        #region create file
+        #region logfile
+            if ($PSBoundParameters.Keys.Contains('LogName')) {
+                #region timezone
+                    switch ($Timezone) {
+                        'UTCTIME' { 
+                            $currentTime = (get-date).ToUniversalTime()
+                            break
+                        }
+                        'LOCALTIME' {
+                            $currentTime = get-date
+                        }
+                    }
+                #endregion
+                
+                #region time in log name
+                    switch ($TimeInLogname) {
+                        'FILETIME' {
+                            $logNameTime = $currentTime.ToFileTime()
+                            $useTimeInLogname = $true
+                        }
+                        'STANDARD' {
+                            $logNameTime = $currentTime.ToString('yyyyMMdd_HH_mm_ss')
+                            $useTimeInLogname = $true
+                        }
+                        Default {
+                            Write-Verbose "Time will not be appended to log file name"
+                            $useTimeInLogname = $false
+                        }
+                    }
+                #endregion
 
-            if ($DoNotCreateFile.IsPresent) {
-                Write-Verbose -Message 'File will not be created !'
-            } else {
+                #region log rotation
+                    if ($PSBoundParameters.Keys.Contains('LogRotationDays')) {
+                        $logRotationEnabled = $true
+                    }
 
-                if (!(Test-Path -LiteralPath $fullLiteralPath -ErrorAction SilentlyContinue)) {
+                    if ($PSBoundParameters.Keys.Contains('LogRotationHours')) {
+                        $logRotationEnabled = $true
+                    }
+                #endregion
+
+                #region log name definition
+
+                    $customizedLogname = New-Object System.Text.StringBuilder
+                    $customizedLogname.Append($LogName) # just log name without anything
+
+                    if ($useTimeInLogname -eq $true) {
+                        $customizedLogname.AppendFormat("_{0}", $logNameTime) # append time 
+                    }
+
+                    if ($logRotationEnabled -eq $true) {
+                        $customizedLogname.Append('-0')
+                    }
+
+                    $customizedLogname.AppendFormat('.{0}', $LogNameExtension) # append file extension
+
+                #endregion
+
+                #region build full file path
                     try {
-                        $null = New-Item -ItemType File -Path $fullLiteralPath
+                        $fullLiteralPath = Join-Path -Path $LiteralLogFolderPath -ChildPath $customizedLogname
                     }
                     catch {
-                        Update-Exception -Exception $_ -ErrorDetailMessage "Failed to create logfile : $fullLiteralPath" -Throw
+                        Update-Exception -Exception $_ -ErrorDetailMessage 'Unable to combine logname with logpath' -Throw
                     }
-                } else {
-                    Write-Verbose -Message "Logfile already exists !"
-                }
+                #endregion
+
+                #region create file
+                    if (!(Test-Path -LiteralPath $fullLiteralPath -ErrorAction SilentlyContinue)) {
+                        try {
+                            $null = New-Item -ItemType File -Path $fullLiteralPath
+                        }
+                        catch {
+                            Update-Exception -Exception $_ -ErrorDetailMessage "Failed to create logfile : $fullLiteralPath" -Throw
+                        }
+                    } else {
+                        Write-Warning -Message "Logfile : $fullLiteralPath already exists !"    # should this fail with error ?
+                                                                                                # maybe another parameter to specify is it 
+                                                                                                # should fail in this case or not
+                    }
+                #endregion
+            }
+        #endregion
+
+        #region output
+            $outputHashtable = [ordered]@{
+                'Indent' = 0;
+                'LogLiterallPath' = $fullLiteralPath;
+                'LogTimezone' = $Timezone;
+                'LogRotationEnabled' = $logRotationEnabled;
+                'LogRotationDays' = $LogRotationDays;
+                'LogRotationHours' = $LogRotationHours;
+                'DebugMessagesEnabled' = $true
             }
 
-        #endregion
-        
-        #region output
-            $Global:ZLogLogFullPath = $fullLiteralPath
-            if (!($SupressOutput.IsPresent)) {
-                    Write-Output $Global:ZLogLogFullPath
+            $Global:ZLogConfig = $outputHashtable
+
+            if (!$SupressPipelineOutput.IsPresent) {
+                Write-Output $outputHashtable   
             }
         #endregion
     }
@@ -254,8 +221,7 @@ function Write-ZLog
 {
     [CmdletBinding(DefaultParameterSetName = 'message')]
     [OutputType([string])]
-    Param
-    (
+    Param (
         [Parameter(Mandatory=$true,
                     ValueFromPipeline = $true,
                    Position=0,
@@ -284,10 +250,6 @@ function Write-ZLog
         [Parameter(ParameterSetName = 'function')]
         [ValidateSet('INFO','WARNING','ERROR','DEBUG')]
         $Level = 'INFO',
-        
-        [Parameter(Mandatory = $false)]
-        [string]
-        $LiterallPath,
 
         [Parameter(Mandatory = $false)]
         [ValidateSet('Increase','Decrease','IncreaseDelayed','DecreaseDelayed','Reset')]
@@ -318,95 +280,99 @@ function Write-ZLog
     )
     Begin {
 
-        #region Message indent
-            $localIndent = 0
-
-            if($Global:ZLogIndent -eq $null) {
-                $Global:ZLogIndent = 0
-            }
-
-<<<<<<< HEAD
-            switch ($Indent) {
-                'Increase'{
-                    $localIndent = ++$Global:ZLogIndent
-                    break
-                }
-                'IncreaseDelayed'{
-                    $localIndent = $Global:ZLogIndent++
-                    break
-                }
-                'Decrease'{
-                    if($Global:ZLogIndent -ne 0) {
-                        $localIndent = --$Global:ZLogIndent
-                    } else {
-                        Write-Verbose 'Indent is already 0'
+        #region internal functions
+            function Set-ZIndentLevel
+            {
+                [CmdletBinding()]
+                [OutputType([int])]
+                Param
+                (
+                    # Param1 help description
+                    [Parameter(Mandatory=$true,
+                            ValueFromPipeline = $true,
+                            Position=0)]
+                    [ValidateSet('Increase','IncreaseDelayed','Decrease','DecreaseDelayed','Reset')]
+                    [String]
+                    $Indent
+                )
+                Process {
+                    switch ($Indent) {
+                            'Increase'{
+                                $localIndent = ++$Global:ZLogConfig.Indent
+                                break
+                            }
+                            'IncreaseDelayed'{
+                                $localIndent = $Global:ZLogConfig.Indent++
+                                break
+                            }
+                            'Decrease'{
+                                if($Global:ZLogConfig.Indent -ne 0) {
+                                    $localIndent = --$Global:ZLogConfig.Indent
+                                } else {
+                                    Write-Verbose 'Indent is already 0'
+                                }
+                                break           
+                            }
+                            'DecreaseDelayed'{
+                                if($Global:ZLogConfig.Indent -ne 0) {
+                                    $localIndent = $Global:ZLogConfig.Indent--
+                                } else {
+                                    Write-Verbose 'Indent is already 0'
+                                }
+                                break
+                            }
+                            'Reset'{
+                                $Global:ZLogConfig.Indent = 0
+                                $localIndent = $Global:ZLogConfig.Indent
+                                break
+                            }
                     }
-                    break           
+                    Write-Output $localIndent
                 }
-                'DecreaseDelayed'{
-                    if($Global:ZLogIndent -ne 0) {
-                        $localIndent = $Global:ZLogIndent--
-                    } else {
-                        Write-Verbose 'Indent is already 0'
+            }
+        #endregion
+
+        #region global configuration
+
+            #region test config variable
+                $testConfigVariable = Get-Variable -Name 'ZLogConfig' -Scope Global -ErrorAction SilentlyContinue
+                if (-not $testConfigVariable) { # if config variable does not exist yet, create a new one with default configuration
+                    $Global:ZLogConfig = [ordered]@{
+                        'Indent' = 0;
+                        'LogLiterallPath' = $null;
+                        'LogTimezone' = 'UTCTIME';
+                        'LogRotationEnabled' = $false;
+                        'LogRotationDays' = $null;
+                        'LogRotationHours' = $null;
+                        'DebugMessagesEnabled' = $false
                     }
-                    break
                 }
-                'Reset'{
-                    $Global:ZLogIndent = 0
-                    $localIndent = $Global:ZLogIndent
-                    break
-                }
+            #endregion
 
-=======
-            if ($Global:ZLogLogFullPath -eq $null) {
-                $LiterallPath = [string]::Empty
-            } else {
-                $LiterallPath = $Global:ZLogLogFullPath
-            }
-
-            switch ($Indent) {
-                'Increase'{
-                    $localIndent = ++$Global:ZLogIndent
-                    break
-                }
-                'IncreaseDelayed'{
-                    $localIndent = $Global:ZLogIndent++
-                    break
-                }
-                'Decrease'{
-                    if($Global:ZLogIndent -ne 0) {
-                        $localIndent = --$Global:ZLogIndent
+            #region read configuration
+                #region indent
+                    $localIndent = 0
+                    if ([string]::IsNullOrEmpty($Indent)) {
+                        $localIndent = $Global:ZLogConfig.Indent
                     } else {
-                        Write-Verbose 'Indent is already 0'
+                        $localIndent = Set-ZIndentLevel -Indent $Indent
                     }
-                    break           
-                }
-                'DecreaseDelayed'{
-                    if($Global:ZLogIndent -ne 0) {
-                        $localIndent = $Global:ZLogIndent--
+
+                    if ($localIndent -gt 0) {
+                        $indentString = "{0}>> " -f (" " * $localIndent)
                     } else {
-                        Write-Verbose 'Indent is already 0'
+                        $indentString = [string]::Empty
                     }
-                    break
-                }
-                'Reset'{
-                    $Global:ZLogIndent = 0
-                    $localIndent = $Global:ZLogIndent
-                    break
-                }
 
->>>>>>> master
-                Default {
-                    $localIndent = $Global:ZLogIndent
-                }
-            }
+                #endregion log file
+                    if ($Global:ZLogConfig.LogLiterallPath) {
+                        $literallPath = $Global:ZLogConfig.LogLiterallPath
+                    } else {
+                        $literallPath = $null
+                    }
+                #region 
+            #endregion
 
-            if($localIndent -gt 0) {
-                $indentString = ">> " * $localIndent
-            }
-            else{
-                $indentString = [string]::Empty
-            }
         #endregion
 
         #region log target
@@ -415,7 +381,7 @@ function Write-ZLog
             if($SupressFileOutput.IsPresent) {
                 Write-Verbose -Message "Logfile output is supressed !"
             } elseif([string]::IsNullOrEmpty($LiterallPath)) {
-                Write-Verbose -Message "ZLogPath variable is not defined or empty. Logfile will not be created !"
+                Write-Verbose -Message "Logfile is not defined"
                 $logToFile = $false
             } else {
                 Write-Verbose -Message "Logging to file : $LiterallPath"
@@ -453,7 +419,7 @@ function Write-ZLog
                 if ($PSBoundParameters.Keys.Contains('Timezone')) {
                     $timeDecision = $Timezone
                 } else {
-                    $timeDecision = $Global:ZLogTimeZone
+                    $timeDecision = $Global:ZLogConfig.LogTimezone
                 }
                 switch ($timeDecision) {
                     'UTCTIME'{
@@ -471,12 +437,6 @@ function Write-ZLog
 
             #region parameterset message
                 if ($PSCmdlet.ParameterSetName -eq 'message') {
-<<<<<<< HEAD
-
-                    if ($Global:ZLogEnableDebugMessages -eq $false -and $Level -eq 'DEBUG') {
-                        Write-Verbose 'DEBUG level messages are disabled'
-                        continue
-                    }
                     
                     Write-debug "Datatype of current message : $($Message.GetType())"
                     Write-debug "Converting to string"
@@ -488,12 +448,12 @@ function Write-ZLog
                         }
 
                         {$_ -is [hashtable]} {
-                            $actuallMessage = $Message | Format-Table -Wrap | Out-String -Width 4096
+                            $actuallMessage = $Message | Format-Table -AutoSize | Out-String -Width 4096
                             break
                         }
 
                         {$_ -is [System.Management.Automation.PSCustomObject]} {
-                            $actuallMessage = $Message | Format-Table -Wrap | Out-String -Width 4096
+                            $actuallMessage = $Message | Format-Table -AutoSize | Out-String -Width 4096
                             break
                         }
 
@@ -506,99 +466,36 @@ function Write-ZLog
 
             #region parameterset function
                 if ($PSCmdlet.ParameterSetName -eq 'function') {
-                    
+                    $Level = 'DEBUG'
+
                     $callStack = Get-PSCallStack
                     Write-Debug -Message "Callstack count : $($callStack.count)"
                     if ($callStack.count -ge 1) {
                         $callStack = $callStack[1]
                     }
 
-                    $actuallMessage = " <~~~~> {0} function : {1} <~~~~>" -f $LogFunction , $callStack.Command
-                    $actuallMessage = $actuallMessage.Trim()
-                    #$finalMessage = "{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString, $mesage
-                }
-            #endregion
-
-            #region parameterset debugoptions
-                if ($PSCmdlet.ParameterSetName -eq 'debugoptions') {     
-                    $Level = 'DEBUG'
-
-                    switch ($DebugOptions) {
-                        'DumpVariablesScopeGlobal' {
-                            Write-Verbose 'Dumping global variables'
-                            $actuallMessage = Get-Variable -Scope 'Global' -ErrorAction Continue | Format-List | Out-String
-                        }
-
-                        'DumpVariablesScopeLocal' {
-                            Write-Verbose -Message 'Dumping local variables'
-                            $actuallMessage =  Get-Variable -Scope 'Local' -ErrorAction Continue | Format-List | Out-String
-                        }
-                    }
-                }
-            #endregion
-
-            #region process message
-                $splitMessage = $actuallMessage -split([environment]::NewLine) # split message by lines
-                $finalMessage = New-Object System.Text.StringBuilder
-
-                if($splitMessage.Count -gt 1 -AND !([string]::IsNullOrEmpty($splitMessage))) {
-
-                    Write-Verbose "Received multiline input"
-
-                    #region identify the line with lowest count of empty spaces from left side
-                        foreach($line in $splitMessage) {
-                            Write-Debug "LINE - >$line<"
-
-                            if(!([string]::IsNullOrEmpty($line)) -AND !([string]::IsNullOrWhiteSpace($line))) {
-                                $countOfSpacesFromStart = $null
-                                $countOfSpacesFromStart = $line.Length - $line.TrimStart(' ').Length
-                    
-                                Write-Debug "Count of Spaces from Start : $countOfSpacesFromStart"
-
-=======
-                    
-                    Write-debug "Datatype of current message : $($Message.GetType())"
-                    Write-debug "Converting to string"
-
-                    switch ($Message) {
-                        {($_ -is [int] -or $_ -is [string])} {
-                            $actuallMessage = $Message
-                            break
-                        }
-
-                        {$_ -is [hashtable]} {
-                            $actuallMessage = $Message | Format-Table -AutoSize | Out-String -Width 4096
-                            break
-                        }
-
-                        {$_ -is [System.Management.Automation.PSCustomObject]} {
-                            $actuallMessage = $Message | Format-Table -AutoSize | Out-String -Width 4096
-                            break
-                        }
-
-                        Default {
-                            $actuallMessage = $Message | Format-List | Out-String -Width 4096
-                        }
-                    }
-                }
-            #endregion
-
-            #region parameterset function
-                if ($PSCmdlet.ParameterSetName -eq 'function') {
-
                     switch ($LogFunction) {
-                        {$_ -eq 'Start' -or $_ -eq 'End'}{
-                            $callStack = Get-PSCallStack
-                            Write-Debug -Message "Callstack count : $($callStack.count)"
-                            if ($callStack.count -ge 1) {
-                                $callStack = $callStack[1]
-                            }
-        
-                            $actuallMessage = " <~~~~> {0} function : {1} <~~~~>" -f $LogFunction , $callStack.Command
-                            $actuallMessage = $actuallMessage.Trim()
+                        'Start' {
+                            $Indent = 'IncreaseDelayed'
+                            break
+                          }
+                        'End' {
+                            $Indent = 'Decrease'
+                            break
                         }
                     }
-                    
+
+                    $localIndent = Set-ZIndentLevel -Indent $Indent
+
+                    if($localIndent -gt 0) {
+                        $indentString = "{0}>> " -f (" " * $localIndent)
+                    }
+                    else {
+                        $indentString = [string]::Empty
+                    }
+
+                    $actuallMessage = " <~~~~> {0} function : {1} ({2})" -f $LogFunction , $callStack.Command, $localIndent
+                    $actuallMessage = $actuallMessage.Trim()
                 }
             #endregion
 
@@ -622,10 +519,21 @@ function Write-ZLog
 
             #region process message
 
-                if ($Global:ZLogEnableDebugMessages -eq $false -and $Level -eq 'DEBUG') {
+                $debugEnabled = $Global:ZLogConfig.DebugMessagesEnabled -eq $false -AND $Level -eq 'DEBUG'
+
+                if ($debugEnabled) {
                     Write-Verbose 'DEBUG level messages are disabled'
-                    continue
+                    return
                 }
+
+                #region make sure that all level string have the same lengt
+                    $paddingDesiredLength = ('INFO','WARNING','ERROR','DEBUG' | Measure-Object -Maximum -Property Length).Maximum
+                    if ($paddingDesiredLength -gt 0) {
+                        $paddedLevel = Pad-Both -InputObject $Level -DesiredLength $paddingDesiredLength
+                    } else {
+                        $paddedLevel = $Level
+                    }
+                #endregion
 
                 $splitMessage = $actuallMessage -split([environment]::NewLine) # split message by lines
                 $finalMessage = New-Object System.Text.StringBuilder
@@ -644,7 +552,6 @@ function Write-ZLog
                     
                                 Write-Debug "Count of Spaces from Start : $countOfSpacesFromStart"
 
->>>>>>> master
                                 if($lowestCountOfSpaces -gt $countOfSpacesFromStart){
                                     $lowestCountOfSpaces = $countOfSpacesFromStart
                                 }
@@ -655,7 +562,7 @@ function Write-ZLog
                     #endregion
 
                     #region remove empty spaces from left side , count is determined by the previous step
-                        $firstLineString = ("{0} <:> {1} <:> {2}" -f $currentTime, $Level , $indentString)
+                        $firstLineString = ("{0} <:> {1} <:> {2}" -f $currentTime, $paddedLevel , $indentString)
                         $firstLineProcessed = $false
                         $lineLength = $firstLineString.Length
 
@@ -687,7 +594,7 @@ function Write-ZLog
                         }
                     #endregion
                 } else {
-                    [void]$finalMessage.Append(("{0} <:> {1} <:> {2}{3}" -f $currentTime, $Level , $indentString , $actuallMessage)) # one line input, so just build message
+                    [void]$finalMessage.Append(("{0} <:> {1} <:> {2}{3}" -f $currentTime, $paddedLevel , $indentString , $actuallMessage)) # one line input, so just build message
                 }
             #endregion
 
@@ -707,11 +614,7 @@ function Write-ZLog
                         }
 
                         'DEBUG' {
-<<<<<<< HEAD
-                            Write-Host -Object $finalMessage.ToString() -ForegroundColor Magenta -BackgroundColor Black
-=======
                             Write-Host -Object $finalMessage.ToString() -ForegroundColor Magenta
->>>>>>> master
                             break
                         }
 
@@ -808,12 +711,9 @@ function Update-Exception
         [switch]
         $Throw
     )
-<<<<<<< HEAD
-=======
     BEGIN{
         Write-ZLog -LogFunction Start -Level DEBUG
     }
->>>>>>> master
     Process {
         $Exception.errordetails = $ErrorDetailMessage
 
@@ -825,10 +725,6 @@ function Update-Exception
             Write-Output $Exception
         }
     }
-<<<<<<< HEAD
-}
-
-=======
     END{
         Write-ZLog -LogFunction End -Level DEBUG
     }
@@ -863,7 +759,6 @@ function Update-Exception
                 Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to list HKLM:\' | Log-Exception -Throw
             }
 #>
->>>>>>> master
 function Log-Exception {
     param(
         # exception object
@@ -883,15 +778,10 @@ function Log-Exception {
         $Throw
     )
     BEGIN{
-<<<<<<< HEAD
-        Write-ZLog -Message "!!!!!!!!-EXCEPTION-!!!!!!!!" -Level ERROR
-        Write-ZLog -Message "!!!!!!!!!!!!!!!!!!!!!!!!!!!" -Level ERROR -Indent IncreaseDelayed
-=======
         Write-ZLog -LogFunction Start -Level DEBUG -Indent IncreaseDelayed
 
         Write-ZLog -Message "!!!!!!!!-EXCEPTION-!!!!!!!!" -Level ERROR
         Write-ZLog -Message "!!!!!!!!!!!!!!!!!!!!!!!!!!!" -Level ERROR
->>>>>>> master
     }
     PROCESS{       
         if ($PSBoundParameters.Keys.Contains('CustomMessage')) {
@@ -908,14 +798,6 @@ function Log-Exception {
 
         $ExceptionObject = $Exception.Exception
         $originalIndent = $Global:ZLogIndent # store original indent level so it can be set back after iterating through inner exceptions 
-<<<<<<< HEAD
-        while ($ExceptionObject.InnerException -ne $null) {
-            Write-ZLog -Message "TARGET SITE : $($ExceptionObject.InnerException.TargetSite)" -Level ERROR -Indent Increase
-            Write-ZLog -Message "MESSAGE : $($ExceptionObject.InnerException.Message)" -Level ERROR
-            $ExceptionObject = $ExceptionObject.InnerException
-        }
-        $Global:ZLogIndent = $originalIndent
-=======
         if ($ExceptionObject.InnerException -ne $null) {
             Write-ZLog -Message "INNER EXCEPTION" -Level ERROR
 
@@ -932,19 +814,11 @@ function Log-Exception {
         Write-ZLog -Message "!!!!!!!!-EXCEPTION-!!!!!!!!" -Level ERROR
 
         Write-ZLog -LogFunction End -Level DEBUG -Indent Decrease
->>>>>>> master
 
         if ($Throw.IsPresent) {
             throw $Exception
         }
     }
-<<<<<<< HEAD
-    END{
-        Write-ZLog -Message "!!!!!!!!!!!!!!!!!!!!!!!!!!!" -Level ERROR -Indent Decrease
-        Write-ZLog -Message "!!!!!!!!-EXCEPTION-!!!!!!!!" -Level ERROR
-    }
-}
-=======
 }
 
 # Select from database
@@ -1303,4 +1177,30 @@ function Log-BoundParameters {
         Write-ZLog -LogFunction End -Level DEBUG -Indent Decrease
     }
 }
->>>>>>> master
+
+function Pad-Both
+{
+     param(
+        [Parameter(Mandatory = $true,
+                   ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $InputObject,
+        
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [int]
+        $DesiredLength
+     )
+     PROCESS {
+        try {
+            $SpacesToAdd = $DesiredLength - $InputObject.Length
+            $PadLeft = $SpacesToAdd/2 + $InputObject.Length
+            $OutputObject = ($InputObject.PadLeft($PadLeft).PadRight($DesiredLength))    
+            Write-Output $OutputObject
+        }
+        catch {
+            throw
+        }
+     }
+}
