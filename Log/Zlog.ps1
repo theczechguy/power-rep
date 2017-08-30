@@ -31,11 +31,15 @@ function New-ZlogConfiguration
 
         [Parameter(Mandatory = $false)]
         [int]
-        $LogRotationDays = 1,
+        $LogRotationDays = 0,
 
         [Parameter(Mandatory = $false)]
         [int]
-        $LogRotationHours = 1,
+        $LogRotationHours = 0,
+
+        [Parameter(Mandatory = $false)]
+        [int]
+        $LogRotationMinutes = 0,
 
         # allow logging of debug level messages
         [Parameter(Mandatory = $false)]
@@ -45,7 +49,12 @@ function New-ZlogConfiguration
         # do not send output hashtable to pipeline in the end
         [Parameter(Mandatory = $false)]
         [switch]
-        $SupressPipelineOutput
+        $SupressPipelineOutput,
+
+        # enable indetation
+        [Parameter(Mandatory = $false)]
+        [switch]
+        $EnableIndent
     )
     Process
     {
@@ -116,28 +125,33 @@ function New-ZlogConfiguration
                     if ($PSBoundParameters.Keys.Contains('LogRotationHours')) {
                         $logRotationEnabled = $true
                     }
+                    
+                    if ($PSBoundParameters.Keys.Contains('LogRotationMinutes')) {
+                        $logRotationEnabled = $true
+                    }
                 #endregion
 
                 #region log name definition
 
                     $customizedLogname = New-Object System.Text.StringBuilder
-                    $customizedLogname.Append($LogName) # just log name without anything
+                    [void]$customizedLogname.Append($LogName) # just log name without anything
 
                     if ($useTimeInLogname -eq $true) {
-                        $customizedLogname.AppendFormat("_{0}", $logNameTime) # append time 
+                        [void]$customizedLogname.AppendFormat("_{0}", $logNameTime) # append time 
                     }
 
                     if ($logRotationEnabled -eq $true) {
-                        $customizedLogname.Append('-0')
+                        $logNameBeforeRotation = $customizedLogname.ToString()
+                        [void]$customizedLogname.Append('-0')
                     }
 
-                    $customizedLogname.AppendFormat('.{0}', $LogNameExtension) # append file extension
+                    [void]$customizedLogname.AppendFormat('.{0}', $LogNameExtension) # append file extension
 
                 #endregion
 
                 #region build full file path
                     try {
-                        $fullLiteralPath = Join-Path -Path $LiteralLogFolderPath -ChildPath $customizedLogname
+                        $fullLiteralPath = Join-Path -Path $LiteralLogFolderPath -ChildPath $customizedLogname.ToString()
                     }
                     catch {
                         Update-Exception -Exception $_ -ErrorDetailMessage 'Unable to combine logname with logpath' -Throw
@@ -147,7 +161,7 @@ function New-ZlogConfiguration
                 #region create file
                     if (!(Test-Path -LiteralPath $fullLiteralPath -ErrorAction SilentlyContinue)) {
                         try {
-                            $null = New-Item -ItemType File -Path $fullLiteralPath
+                            $logFile = New-Item -ItemType File -Path $fullLiteralPath
                         }
                         catch {
                             Update-Exception -Exception $_ -ErrorDetailMessage "Failed to create logfile : $fullLiteralPath" -Throw
@@ -156,28 +170,116 @@ function New-ZlogConfiguration
                         Write-Warning -Message "Logfile : $fullLiteralPath already exists !"    # should this fail with error ?
                                                                                                 # maybe another parameter to specify is it 
                                                                                                 # should fail in this case or not
+                        try {
+                            $logFile = Get-Item -LiteralPath $fullLiteralPath   
+                        }
+                        catch {
+                            Update-Exception -Exception $_ -ErrorDetailMessage "Failed to get logfile : $fullLiteralPath" -Throw
+                        }
                     }
                 #endregion
             }
         #endregion
 
         #region output
-            $outputHashtable = [ordered]@{
-                'Indent' = 0;
-                'LogLiterallPath' = $fullLiteralPath;
-                'LogTimezone' = $Timezone;
-                'LogRotationEnabled' = $logRotationEnabled;
-                'LogRotationDays' = $LogRotationDays;
-                'LogRotationHours' = $LogRotationHours;
-                'DebugMessagesEnabled' = $true
-            }
 
-            $Global:ZLogConfig = $outputHashtable
+            $configHashTable = New-ZlogConfigTable
+            $configHashTable.'EnableIndent' = $EnableIndent.IsPresent
+            $configHashTable.'Indent' = 0
+            $configHashTable.'LogLiterallPath' = $fullLiteralPath
+            $configHashTable.'LogFolder' = $LiteralLogFolderPath
+            $configHashTable.'LogNameNoRotation' = $logNameBeforeRotation
+            $configHashTable.'LogFileCreatedUTC' = $logFile.CreationTimeUtc
+            $configHashTable.'LogFileExtension' = $LogNameExtension
+            $configHashTable.'LogTimezone' = $Timezone
+            $configHashTable.'LogRotationEnabled' = $logRotationEnabled
+            $configHashTable.'LogRotationDays' = $LogRotationDays
+            $configHashTable.'LogRotationHours' = $LogRotationHours
+            $configHashTable.'LogRotationMinutes' = $LogRotationMinutes
+            $configHashTable.'LogRotationIdentifier' = 0
+            $configHashTable.'DebugMessagesEnabled' = $true
+
+            $Global:ZLogConfig = $configHashTable
 
             if (!$SupressPipelineOutput.IsPresent) {
-                Write-Output $outputHashtable   
+                Write-Output $configHashTable   
             }
         #endregion
+    }
+}
+
+function Rotate-Zlog {
+    [CmdletBinding()]
+    param()
+    PROCESS{
+        if (-not (Get-Variable -Name ZLogConfig -Scope Global -ErrorAction SilentlyContinue)) {
+            Write-Error -Message 'ZLog configuration has not been set yet, rotation is not possible'`
+                        -RecommendedAction 'Run first New-ZlogConfiguration'`
+        } else {
+            #region should rotate ?
+                if ($Global:ZLogConfig.LogRotationEnabled -eq $true) {
+                    Write-Verbose -Message "Logrotation is enabled"
+
+                    [datetime]$fileCreatedUTC = $Global:ZLogConfig.LogFileCreatedUTC
+                    $logRotationDays = $Global:ZLogConfig.LogRotationDays
+                    $logRotationHours = $Global:ZLogConfig.LogRotationHours
+                    $logRotationMinutes = $Global:ZLogConfig.LogRotationMinutes
+                    $logRotationIdentifier = $Global:ZLogConfig.LogRotationIdentifier
+                    [string]$logFullPath = $Global:ZLogConfig.LogLiterallPath
+                    $logFileExtension = $Global:ZLogConfig.LogFileExtension
+                    $logNameNoRotation = $Global:ZLogConfig.LogNameNoRotation
+                    $logFolder = $Global:ZLogConfig.LogFolder
+
+                    $limit = (get-date).ToUniversalTime().AddMinutes(-$logRotationMinutes).AddHours(-$logRotationHours).AddDays(-$logRotationDays)
+
+                    if ($fileCreatedUTC -lt $limit) {
+                        # file is older , rotate
+                        Write-Verbose -Message 'Log rotation is initiated'
+
+                        $rotateMessage = New-Object System.Text.StringBuilder
+                        [void]$rotateMessage.AppendLine(('=' * 50))
+                        [void]$rotateMessage.AppendLine('LOG ROTATION INITIATED')
+                        [void]$rotateMessage.AppendLine("CURRENT LOG FILE : $($Global:ZLogConfig.LogLiterallPath)")
+                        
+                    } else {
+                        # file is newer , do not rotate
+                        Write-Verbose -Message 'Logfile is not ready for log rotation'
+                        return
+                    }
+                } else {
+                    return
+                }
+            #endregion
+            #region rotate
+                    $Global:ZLogConfig.LogRotationIdentifier++
+                    $newLogName = "{0}-{1}.{2}" -f $logNameNoRotation,$Global:ZLogConfig.LogRotationIdentifier,$logFileExtension
+                    [void]$rotateMessage.AppendLine("NEW LOG FILE : $newLogName")
+
+                    # write to old log
+                    Write-ZLog -Message $rotateMessage.ToString() -Level WARNING
+
+                    #update global config
+                    $newLogLiterallPath = Join-Path -Path $logFolder -ChildPath $newLogName
+                    $Global:ZLogConfig.LogLiterallPath = $newLogLiterallPath
+
+                    #create new file
+                    try {
+                        $newLogFile = New-Item -ItemType File -Path $newLogLiterallPath
+                    }
+                    catch {
+                        Update-Exception -Exception $_ -ErrorDetailMessage "Failed to create file : $newLogLiterallPath" -Throw
+                    }
+
+                    $Global:ZLogConfig.LogFileCreatedUTC = $newLogFile.CreationTimeUtc
+                    
+                    $rotateMessage.Clear() # clear previous messages
+                    $rotateMessage.AppendLine('LOG ROTATION')
+                    $rotateMessage.AppendLine("PREVIOUS LOG : $logFullPath")
+
+                    #write to new log file
+                    Write-ZLog -Message $rotateMessage.ToString() -Level WARNING
+            #endregion
+        }
     }
 }
 
@@ -276,7 +378,12 @@ function Write-ZLog
         # send output message to pipeline
         [Parameter(Mandatory = $false)]
         [switch]
-        $PassThrough
+        $PassThrough,
+
+        # allow log rotation , if rotation is enabled
+        [Parameter(Mandatory = $false)]
+        [switch]
+        $AllowLogRotationAfterThisMessage
     )
     Begin {
 
@@ -337,32 +444,28 @@ function Write-ZLog
             #region test config variable
                 $testConfigVariable = Get-Variable -Name 'ZLogConfig' -Scope Global -ErrorAction SilentlyContinue
                 if (-not $testConfigVariable) { # if config variable does not exist yet, create a new one with default configuration
-                    $Global:ZLogConfig = [ordered]@{
-                        'Indent' = 0;
-                        'LogLiterallPath' = $null;
-                        'LogTimezone' = 'UTCTIME';
-                        'LogRotationEnabled' = $false;
-                        'LogRotationDays' = $null;
-                        'LogRotationHours' = $null;
-                        'DebugMessagesEnabled' = $false
-                    }
+                    $Global:ZLogConfig = New-ZlogConfigTable
                 }
             #endregion
 
             #region read configuration
                 #region indent
+                    $indentString = [string]::Empty
                     $localIndent = 0
-                    if ([string]::IsNullOrEmpty($Indent)) {
-                        $localIndent = $Global:ZLogConfig.Indent
-                    } else {
-                        $localIndent = Set-ZIndentLevel -Indent $Indent
-                    }
+                    if ($Global:ZLogConfig.EnableIndent -eq $true) {
+                        if ([string]::IsNullOrEmpty($Indent)) {
+                            $localIndent = $Global:ZLogConfig.Indent
+                        } else {
+                            $localIndent = Set-ZIndentLevel -Indent $Indent
+                        }
 
-                    if ($localIndent -gt 0) {
-                        $indentString = "{0}>> " -f (" " * $localIndent)
-                    } else {
-                        $indentString = [string]::Empty
+                        if ($localIndent -gt 0) {
+                            $indentString = "{0}>> " -f (" " * $localIndent)
+                        } else {
+                            $indentString = [string]::Empty
+                        }
                     }
+                #endregion
 
                 #endregion log file
                     if ($Global:ZLogConfig.LogLiterallPath) {
@@ -500,7 +603,7 @@ function Write-ZLog
             #endregion
 
             #region parameterset debugoptions
-                if ($PSCmdlet.ParameterSetName -eq 'debugoptions') {     
+                if ($PSCmdlet.ParameterSetName -eq 'debugoptions') {
                     $Level = 'DEBUG'
 
                     switch ($DebugOptions) {
@@ -526,7 +629,7 @@ function Write-ZLog
                     return
                 }
 
-                #region make sure that all level string have the same lengt
+                #region make sure that all level strings have the same lenght
                     $paddingDesiredLength = ('INFO','WARNING','ERROR','DEBUG' | Measure-Object -Maximum -Property Length).Maximum
                     if ($paddingDesiredLength -gt 0) {
                         $paddedLevel = Pad-Both -InputObject $Level -DesiredLength $paddingDesiredLength
@@ -628,7 +731,7 @@ function Write-ZLog
             #region file
                 if($logToFile -eq $true) {
                     try {
-                        $finalMessage.ToString() | Out-File -LiteralPath $LiterallPath -Append -force # out-file does not block file for reading    
+                        $finalMessage.ToString() | Out-File -LiteralPath $LiterallPath -Append -force # out-file does not block file for reading
                     }
                     catch {
                         Update-Exception -Exception $_ -ErrorDetailMessage 'Failed to write log message to file' -Throw
@@ -641,6 +744,13 @@ function Write-ZLog
                     Write-Output -InputObject $finalMessage.ToString()
                 }
             #endregion
+        #endregion
+    }
+    End {
+        #region log rotation
+            if ($AllowLogRotationAfterThisMessage.IsPresent) {
+                Rotate-Zlog   
+            }
         #endregion
     }
 }
@@ -1203,4 +1313,26 @@ function Pad-Both
             throw
         }
      }
+}
+
+function New-ZlogConfigTable {
+    PROCESS{
+        $outputHashtable = [ordered]@{
+            'EnableIndent' = $false
+            'Indent' = 0
+            'LogLiterallPath' = $null
+            'LogFolder' = $null
+            'LogNameNoRotation' = $null
+            'LogFileCreatedUTC' = $null
+            'LogFileExtension' = 'log'
+            'LogTimezone' = 'UTCTIME'
+            'LogRotationEnabled' = $false
+            'LogRotationDays' = 0
+            'LogRotationHours' = 0
+            'LogRotationMinutes' = 0
+            'LogRotationIdentifier' = 0
+            'DebugMessagesEnabled' = $false
+        }
+        Write-Output $outputHashtable
+    }
 }
